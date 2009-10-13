@@ -41,6 +41,7 @@ void parserArg(int argc, char *argv[], TArgum &params) {
    memset(params.hostname, '\0', sizeof(params.hostname));
 
    int carka = 0;
+   int pomlcka = 0;
    int mod = 0;
    int pozice = 0;
    char cislo[CISLO];
@@ -65,6 +66,13 @@ void parserArg(int argc, char *argv[], TArgum &params) {
                }
                else if( argv[i+1][pozice] == '-' )//obsahuje '-'
                { 
+                  if( pomlcka != 0 )
+                  {
+                     //bud zrusit nebo pouzit cast pro argumentu
+                     fprintf(stderr, "MOD3 vickrat pomlcka\n");
+                     break;
+                  }
+                  pomlcka++;
                   mod = 3;
                   carka = 4;
                }
@@ -91,6 +99,7 @@ void parserArg(int argc, char *argv[], TArgum &params) {
          polept = (int*)malloc(carka * sizeof(int));//nezapomenout uvolnit
          polept[0] = mod;
          polept[1] = carka;
+         pomlcka = 0;
          //naplneni pole, cisl
          if( mod == 1 )
          {  //kontrola rozsahu velikosti portu
@@ -133,6 +142,7 @@ void parserArg(int argc, char *argv[], TArgum &params) {
             }
             polept[pozice2] = atoi(cislo);//ulozeni posldeniho cisla do pole
          }
+         //pracuje tak ze vezme jen dobrou cast z portu
          else if( mod == 3 )//mod rozsah portu
          {
             for( pozice = 0; argv[i+1][pozice] != '\0'; pozice++ )
@@ -144,16 +154,34 @@ void parserArg(int argc, char *argv[], TArgum &params) {
                }
                else if( argv[i+1][pozice] == '-' )//nemuselo by se
                {
-                  polept[2] = atoi(cislo);
-                  pozice1 = 0;
-                  memset(cislo, '\0', sizeof(cislo));
+                  //vynecha druhou cats za pmlckouo
+                  if( pomlcka == 0)
+                  {
+                     polept[2] = atoi(cislo);
+                     pozice1 = 0;
+                     memset(cislo, '\0', sizeof(cislo));
+                     pomlcka++;
+                  }
+                  else if( pomlcka == 1)
+                  {
+                     printf("pomlcka ----------%d-\n",atoi(cislo));
+   
+                     polept[3] = atoi(cislo);
+                     pomlcka = 2;
+                    // memset(cislo, '\0', sizeof(cislo));
+                  }
+                  //break;
+                  //memset(cislo, '\0', sizeof(cislo));
                }
                else//nemuze nastat
                {
                   printf("nemelo nastat\n");
                }
             }
-            polept[3] = atoi(cislo);
+            if( pomlcka == 1 )
+            {
+               polept[3] = atoi(cislo);
+            }
          }
          else  //nemelo by nastat
          {
