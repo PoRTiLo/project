@@ -45,6 +45,8 @@ void parserArg(int argc, char *argv[], TArgum &params) {
    int mod = 0;
    int pozice = 0;
    char cislo[CISLO];
+   int typprekladu = 0;
+   char addres[BUF];
    memset(cislo, '\0', sizeof(cislo));
    int *polept;
 
@@ -193,7 +195,7 @@ void parserArg(int argc, char *argv[], TArgum &params) {
 
          i++;
       }
-  /*    else if( (argv[i][0] == '-') && (argv[i][2] == 'u')
+      else if( (argv[i][0] == '-') && (argv[i][2] == 'u')
                                    && (argv[i][1] == 'p')
              ) 
       {
@@ -209,8 +211,26 @@ void parserArg(int argc, char *argv[], TArgum &params) {
       else
       {
          //zpracovani IP adresy nebo domain name
+         if( isdigit(argv[i][0]) == 0 )
+         {
+            //domain name
+            typprekladu = 1;
+            for( int k = 0; argv[i][k] != '\0'; k++ )
+            {
+               addres[k] = argv[i][k];
+            }
+         }
+         else
+         {
+            //adresa ve forme IP
+            typprekladu = 2;
+            for( int k =0; argv[i][k] != '\0'; k++ )
+            {
+               addres[k] = argv[i][k];
+            }
+         }
       }
-*/
+
    }
 ////////////////////////////////////
 ///kontrolni vypisy
