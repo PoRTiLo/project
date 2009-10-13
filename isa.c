@@ -52,34 +52,30 @@ void parserArg(int argc, char *argv[], TArgum &params) {
       if( (argv[i][0] == '-') && (argv[i][2] == 't')
                               && (argv[i][1] == 'p'))
       {
-//volat FCEEEEEEEEEEEEEEEE PT
-printf("fce PT ,\n");
-         //zpracovani portu ARGPT
-//kontrola zda je zadany spravny port,jako v rozsahu a zda tam neni pismeno
-         for( pozice = 0; (argv[i+1][pozice] != '\0');
-              pozice++ )
+//zpracovani portu ARGPT
+         //port nezacina '-' ani ','
+         if( argv[i+1][0] != '-' && argv[i+1][0] != ',' ) 
          {
-            if( argv[i+1][pozice] == ',' )//obsahuje carku
-            {     //mod 2, pole velikost podle postu carek +2
-printf("carka\n");
-               mod = 2;
-               carka++;
-            }
-//pozor na prvni znak -------
-            else if( argv[i+1][pozice] == '-' )//obsahuje '-'
-            {     //mod 3, pole velikost 4
-printf("----\n");
-               mod = 3;
-               carka = 4;
-            }
-//dodelat,poresit co nastane kdyz spatne zadany port
-            else//neni cislo
+            for( pozice = 0; argv[i+1][pozice] != '\0'; pozice ++ )
             {
-//printf("neni cislo \n");
+               if( argv[i+1][pozice] == ',' )//obsahuje ','
+               { 
+                  mod = 2;
+                  carka++;
+               }
+               else if( argv[i+1][pozice] == '-' )//obsahuje '-'
+               { 
+                  mod = 3;
+                  carka = 4;
+               }
+//dodelat,poresit co nastane kdyz spatne zadany port
+               else if( isdigit(argv[i+1][pozice]) == 0 ) //neni cislo
+               {
+                  fprintf(stderr, "CHYBA parametru, neni cislo\n");
+               }
             }
          }
-      
-         if( mod == 0 )
+         if( mod == 0 ) //port zadan jednim cislem
          {
             mod = 1;
             carka = 3;
@@ -97,14 +93,20 @@ printf("----\n");
          polept[1] = carka;
          //naplneni pole, cisl
          if( mod == 1 )
-         {
-            polept[2] = atoi(argv[i+1]);
+         {  //kontrola rozsahu velikosti portu
+            if( atoi(argv[i+1]) > 0 && atoi(argv[i+1]) <= 65535 )
+            {
+               polept[2] = atoi(argv[i+1]);
+            }
+            else //vytvorit fci na vypis chyb
+            {
+               fprintf(stderr, "CHYBA MOD1 spatne rozsah portu\n");
+            }
          }
          else if( mod == 2 )
          {
             for( pozice = 0; argv[i+1][pozice] != '\0'; pozice++ )
             {
-printf("ve for mode 2\n");
                if( isdigit(argv[i+1][pozice]) != 0 )
                {
                   cislo[pozice1] = argv[i+1][pozice];
@@ -112,20 +114,26 @@ printf("ve for mode 2\n");
                }
                else if( argv[i+1][pozice] == ',' )
                {
-                  polept[pozice2] = atoi(cislo);
-                  pozice2++;
+                  if( atoi(cislo) > 0 && atoi(cislo) <= 65355 )
+                  {
+                     polept[pozice2] = atoi(cislo);//ulozeni cisla do pole
+                     pozice2++;
+                  }
+                  else
+                  {
+                     fprintf(stderr, "MOD2 port cislo %d je vynechan, lezi mimo rozsah povolenych portu\n",atoi(cislo));
+                  }
                   pozice1 = 0;
                   memset(cislo, '\0', sizeof(cislo));
                }
                else
                {
-                  printf("nemelo niukdy nastat\n");
+                  fprintf(stderr, "MOD2 neni vyresena drivejsi kontrola\n");
                }
             }
-printf("co\n");
-            polept[pozice2] = atoi(cislo);
+            polept[pozice2] = atoi(cislo);//ulozeni posldeniho cisla do pole
          }
-         else if( mod == 3 )
+         else if( mod == 3 )//mod rozsah portu
          {
             for( pozice = 0; argv[i+1][pozice] != '\0'; pozice++ )
             {
