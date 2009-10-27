@@ -1,8 +1,13 @@
 ////xsendl00
 //ISA
+
+#define __USE_BSD
+#define __FAVOR_BSD
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <netinet/ip.h>
 #include <string>
 #include <string.h>
 #include <ctype.h>
@@ -242,15 +247,102 @@ void parserArg(int argc, char *argv[], TArgum &params) {
 
 } 
 
+////////////////////////////////////
+//// kontrolni soucet
+///////////////////////////////////
+unsigned short checksum( unsigned short *datagram, int nwords ) {
+   unsigned long sum;
+   for( sum = 0; nwords > 0; nwords-- ) sum += *datagram++;
+   sum = (sum >> 16) + (sum & 0xffff);
+   sum += (sum >> 16);
+   return ~sum;
+}
+////////////////////////////////////
 
+
+///////////////////////////////////
+////  vytvoreni socketu
+//////////////////////////////////
+int openSocket( int *mSocket) {
+   //int chyba = 0;
+   if( (*mSocket = socket(PF_INET, SOCK_RAW, IPPROTO_TCP) ) < 0 )
+   {
+      //chyba = -1;
+      //return chyba;
+   }
+   return 1;// chyba
+}
+///////////////////////////////
+////  naplneni struktury TCP hlavicky
+//////////////
+// unsigned char ip_hl:4, ip_v:4
+// unsigned char ip_tos;
+// unsigned short int ip_len; //celkova delak datagramu v bytech i hlavicka
+// unsigned short int ip_id;  //slouzi potrebam fragmentace
+                              //vsechny fragmenty ze stejenho celku maji v teto polozce stejnou hodnotu
+                              //podle toho se pozna ze patri k sobe
+// unsigned short int ip_off; //offset fragmentu dat od zacatku puvodniho celku
+// unsigned char ip_ttl;   //Time To Live
+                           //fakticky citac pruchodu pres smerovace
+                           //slouzi k detekci zacykleni
+// unsigned char ip_p;  //udava typ uzitecneho nakladu
+                        //1=ICMP, 4=IP over IP(tunelovani
+                        //6=TCP, 17=UDP
+// unsigned short int ip_sum; //kontrolni soucet hlavicky
+                              //pocitany jako 1-vy doplnek
+// unsigned int ip_src; //zdrojova IP adresa
+// unsigned int ip_dst; //cilova IP adresa
+/////////////////////////////////////
+void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
+
+   ip_head->ip_hl = 5;  // velikost hlavicky (typisky 20 bytu)
+   ip_head->ip_v = 4;   // verze IP protokolu
+   ip_head->ip_tos = 0;
+   ip_head->ip_len = sizeof(struct ip) + sizeof(struct tcphdr);
+   ip_head->ip_id = htonl(54321);
+   ip_head->ip_off= 0;
+   ip_head->ip_ttl = 255;
+   ip_head->ip_p = 6;
+   ip_head->ip_sum = 0; //prozatim nula, po vypoctu se doplni
+   ip_head->ip_src.s_addr = inet_addr("128.0.0.1");//doplnit IP adresu
+   ip_head->ip_dst.s_addr = sin.sin_addr.s_addr;
+
+}
+
+///////////////////////////////////////////////////////
+////  naplneni struktoy TCP hlavicky
+////////////////
+//
+
+/*
+void fillTCP() {
+
+}
+*/
 ///////////////////////////////
 ///   main
 ///////////////////////////////
-int main (int argc, char *argv[]) {
+int main( int argc, char *argv[] ) {
 
    TArgum params;
 printf("main\n");
    parserArg(argc, argv, params);//volani FCE pro argumenty
 printf("end \n");
+
+   char datagram[4096];//bufer, obsahuje IP hlavicku a TCP hlavicku
+   
+   int mSocket;
+   openSocket( &mSocket);
+   struct ip *ip_head = (struct ip *) datagram; // IP hlavika 
+   struct tcphdr *tcp_head = (struct tcphdr *) ( datagram + sizeof( struct ip) );   // TCP hlavicka
+   struct sockaddr_in sin;
+   sin.sin_family = AF_INET;
+   sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+   sin.sin_port = htons(50440);
+   memset( datagram, 0, 4096);   // vynulovani datagramu
+
+   fillIP(ip_head, sin);
+  // fillTCP();
+   printf("tcp %d \n",ip_head->ip_sum);
    return 1;
 }
