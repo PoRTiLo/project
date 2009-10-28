@@ -36,6 +36,20 @@ typedef struct argument {
 
 
 /////////////////////////////
+////  pomocna TCP header
+////////
+// pro generovani kontrolniho souctu
+struct pom_tcp_head {
+   struct in_addr src;
+   struct in_addr dst;
+   unsigned char pad;
+   unsigned char protocol;
+   unsigned short tcp_len;
+   struct tcphdr tcp_head;
+};
+/////////////////////////////
+
+/////////////////////////////
 ///   parsrovani argumentu
 ////////////////////////////
 void parserArg(int argc, char *argv[], TArgum &params) {
@@ -302,7 +316,7 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
    ip_head->ip_id = htonl(54321);
    ip_head->ip_off= 0;
    ip_head->ip_ttl = 255;
-   ip_head->ip_p = 6;
+   ip_head->ip_p = 6;   //IPPROTO_TCP
    ip_head->ip_sum = 0; //prozatim nula, po vypoctu se doplni
    ip_head->ip_src.s_addr = inet_addr("128.0.0.1");//doplnit IP adresu
    ip_head->ip_dst.s_addr = sin.sin_addr.s_addr;
@@ -313,12 +327,21 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
 ////  naplneni struktoy TCP hlavicky
 ////////////////
 //
+void fillTCP(struct tcphdr* tcp_head) {
 
-/*
-void fillTCP() {
-
+   tcp_head->th_sport = htons(1234);   //doplnit cilso portu
+   tcp_head->th_dport = htons(1234);   //doplnit port
+   tcp_head->th_seq = random();
+   tcp_head->th_ack = 0;
+   tcp_head->th_x2 = 0;
+   tcp_head->th_off = 0;
+   tcp_head->th_flags = TH_SYN;
+   tcp_head->th_win = htonl(65535);
+   tcp_head->th_sum = 0;
+   tcp_head->th_urp = 0;
 }
-*/
+
+
 ///////////////////////////////
 ///   main
 ///////////////////////////////
@@ -342,7 +365,7 @@ printf("end \n");
    memset( datagram, 0, 4096);   // vynulovani datagramu
 
    fillIP(ip_head, sin);
-  // fillTCP();
+   fillTCP(tcp_head);
    printf("tcp %d \n",ip_head->ip_sum);
    return 1;
 }
