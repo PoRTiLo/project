@@ -25,6 +25,8 @@ using namespace std;
 #define ROZ 4
 #define CISLO 10 
 
+#define MIN(X,Y) ( (X) < (Y) ? (X) : (Y) )
+#define MAX(X,Y) ( (X) > (Y) ? (X) : (Y) )
 
 //////struktura parametru
 ////////////////////////
@@ -35,6 +37,7 @@ typedef struct argument {
    int *polept;
    char rozhrani[ROZ];   // 1 = em0; 2 = ...
    char hostname_ip[BUF];
+   char addres[BUF];
 }  TArgum;
 
 
@@ -60,6 +63,7 @@ void parserArg(int argc, char *argv[], TArgum &params) {
 
 //vyprazdneni strukturu
    memset(params.hostname_ip, '\0', sizeof(params.hostname_ip));
+   memset(params.addres, '\0', sizeof(params.addres));
    params.pt = 0;
    params.pu = 0;
 
@@ -68,11 +72,10 @@ void parserArg(int argc, char *argv[], TArgum &params) {
    int mod = 0;
    int pozice = 0;
    char cislo[CISLO];
-   char addres[BUF];
    memset(cislo, '\0', sizeof(cislo));
    //int *polept;
 
-   for(int i = 0; i < argc; i++)
+   for(int i = 1; i < argc; i++)
    {
       if( (argv[i][0] == '-') && (argv[i][2] == 't')
                               && (argv[i][1] == 'p'))
@@ -121,6 +124,7 @@ void parserArg(int argc, char *argv[], TArgum &params) {
          int pozice1 = 0;//pozice pri nacitani cisla, pom, pole
          int pozice2 = 2;//pozice pro nacitani portu do pole
          params.polept = (int*)malloc(carka * sizeof(int));//nezapomenout uvolnit
+         memset(params.polept, '\0', sizeof(params.polept));
          params.polept[0] = mod;
          params.polept[1] = carka;
          pomlcka = 0;
@@ -223,21 +227,17 @@ void parserArg(int argc, char *argv[], TArgum &params) {
 
 
          //zpracovani portu ARGPU
+         i++;
       }
       else if( argv[i][0] == '-' && argv[i][1] == 'i')
       {
          if( argv[i+1][0] == 'e' && argv[i+1][1] == 'm'
                                  && argv[i+1][2] == 0)
-         //   params.rozhrani = argv[i+1];
-      //   memcpy(params.rozhrani, argv[i+1], sizeof(argv[i+1])+1);
-        // params.rozhrani = &argv[i+1];
       memset(params.rozhrani, '\0', sizeof(params.rozhrani));
          for(int l=0;argv[i+1][l]!='\0';l++)params.rozhrani[l]=argv[i+1][l];
          printf("ppppp %s \n",params.rozhrani);
          if( argv[i+1][0] == 'l' && argv[i+1][1] == 0);
-      //      params.rozhrani = argv[i+1];
-         
-
+         i++;
       }
       else if( argv[i][0] == '-')
       {
@@ -252,7 +252,7 @@ void parserArg(int argc, char *argv[], TArgum &params) {
            params.typ_prekladu = 1;
             for( int k = 0; argv[i][k] != '\0'; k++ )
             {
-               addres[k] = argv[i][k];
+              params.addres[k] = argv[i][k];
             }
          }
          else
@@ -261,8 +261,9 @@ void parserArg(int argc, char *argv[], TArgum &params) {
             params.typ_prekladu = 2;
             for( int k =0; argv[i][k] != '\0'; k++ )
             {
-               addres[k] = argv[i][k];
+               params.addres[k] = argv[i][k];
             }
+            printf("cislo\n");
          }
       }
 
@@ -270,7 +271,8 @@ void parserArg(int argc, char *argv[], TArgum &params) {
 ////////////////////////////////////
 ///kontrolni vypisy
          printf("carka %d \n",carka);
-         for(int i = 0; i <  carka; i++)
+        // for(int i = 0; i <  carka; i++)
+         for(int i = 0; params.polept[i] != '\0';i++)
          {
             printf("pole portu  %d\n",params.polept[i]);
          }
@@ -348,7 +350,7 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
    ip_head->ip_ttl = 255;
    ip_head->ip_p = 6;   //IPPROTO_TCP
    ip_head->ip_sum = 0; //prozatim nula, po vypoctu se doplni
-   ip_head->ip_src.s_addr = inet_addr("128.0.0.1");//doplnit IP adresu
+   ip_head->ip_src.s_addr = inet_addr("192.168.2.102");//doplnit IP adresu
    ip_head->ip_dst.s_addr = sin.sin_addr.s_addr;
 
 }
@@ -357,10 +359,9 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
 ////  naplneni struktoy TCP hlavicky
 ////////////////
 //
-void fillTCP(struct tcphdr* tcp_head) {
-
-   tcp_head->th_sport = htons(1234);   //doplnit cilso portu
-   tcp_head->th_dport = htons(1234);   //doplnit port
+void fillTCP(struct tcphdr* tcp_head, int i) {
+   tcp_head->th_sport = htons(12234);   //doplnit cilso portu(zdrojovy)
+   tcp_head->th_dport = htons(i);   //doplnit port(cilovy)
    tcp_head->th_seq = random();
    tcp_head->th_ack = 0;
    tcp_head->th_x2 = 0;
@@ -415,6 +416,9 @@ int main( int argc, char *argv[] ) {
    TArgum params;
    parserArg(argc, argv, params);   // volani FCE pro argumenty
   
+   
+
+
    //ipInterface(params);
    int mSocket;
    openSocket( &mSocket);
@@ -428,16 +432,38 @@ int main( int argc, char *argv[] ) {
       struct tcphdr *tcp_head = (struct tcphdr *) ( datagram + sizeof( struct ip) );   // TCP hlavicka
       struct sockaddr_in sin;
       sin.sin_family = AF_INET;
-      sin.sin_addr.s_addr = inet_addr("127.0.0.1");
-      sin.sin_port = htons(50440);
+      sin.sin_addr.s_addr = inet_addr(params.addres);
+      sin.sin_port = htons(12234);
       memset( datagram, 0, 4096);   // vynulovani datagramu
 //pridat kontrolni soucet
-     // while( 1 )
-     // {
-         fillIP(ip_head, sin);   // naplneni IP hlavicky
-         fillTCP(tcp_head);      // naplneni TCP hlavicky
-         printf("tcp %d \n",ip_head->ip_sum);
-     // }
+      if(params.polept[0] == 3)  //nastaveni MAx, MIN portu u rozsahu
+      {
+         int max = MAX(params.polept[2], params.polept[3]);
+         int min = MIN(params.polept[2], params.polept[3]);
+         params.polept[2] = min;
+         params.polept[3] = max;
+         printf("max : %d, min : %d \n", params.polept[3],params.polept[2]);
+      }
+   
+      for(int i = 2; params.polept[i] != '\0'; i++)
+      {
+         if(params.polept[0] == 3)  //porty zadany pomoci rozsahu
+         {
+            for( int l = params.polept[2]; l <= params.polept[3]; l++)
+            {
+               printf("cislo portu :  %d \n",l);
+               fillTCP(tcp_head, l);
+            }
+            i++;
+         }
+         else
+         {
+            fillIP(ip_head, sin);     // naplneni IP hlavicky
+            fillTCP(tcp_head, params.polept[i]);    // naplneni TCP hlavicky
+            printf("tcp %d \n",ip_head->ip_sum);
+  printf(" tcp_head->th_dport: %d\n",tcp_head->th_dport);   //doplnit port(cilovy)
+         }
+      }
    }
    if( params.pu == 1 ) // UDP scanning
    {
