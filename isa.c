@@ -315,11 +315,18 @@ unsigned short checkSumTCP( int src, int dst, unsigned short *addr, int len ) {
 int openSocket( int *mSocket) {
    //int chyba = 0;
    
-if( (*mSocket = socket(PF_INET, SOCK_RAW, IPPROTO_TCP) ) < 0 )
+   if( (*mSocket = socket(PF_INET, SOCK_RAW, IPPROTO_TCP) ) < 0 )
    {
       //chyba = -1;
-      //return chyba;
+         //return chyba;
+      printf("Chyba pri tvorbe ocketu\n");
    }
+   const int on = 1;
+   if( setsockopt(*mSocket, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) < 0 )
+   {
+      printf("chyba ve fci openSocket u fce setcoskopt\n");
+   }
+
    return 1;// chyba
 }
 ///////////////////////////////
@@ -424,24 +431,23 @@ int main( int argc, char *argv[] ) {
    parserArg(argc, argv, params);   // volani FCE pro argumenty
   
    
-
-
    //ipInterface(params);
+
    int mSocket;
    openSocket( &mSocket );
 
    if( params.pt == 1 )  // TCP scanning
    {
 
-      u_char *packet;
-      packet = (u_char *)malloc(60);
+      //u_char *packet;
+      //packet = (u_char *)malloc(60);
 
       char datagram[4096]; // bufer, obsahuje IP hlavicku a TCP hlavicku
    
       struct ip *ip_head = (struct ip *) datagram; // IP hlavika 
       struct tcphdr *tcp_head = (struct tcphdr *) ( datagram + sizeof( struct ip) );   // TCP hlavicka
       struct sockaddr_in sin; //struktur apro vzdalene PC
-      memset(&sin, 0, sizeof(sin));
+      memset(&sin, '\0', sizeof(sin));
       sin.sin_family = AF_INET;
       sin.sin_addr.s_addr = inet_addr(IP2);   //asik ma byt 128.0.0.1
 /////////////doplnit cylovy port, ne zdrojovy
@@ -474,11 +480,16 @@ int main( int argc, char *argv[] ) {
          {
             sin.sin_port = htons(params.polept[i]);
             fillIP(ip_head, sin);     // naplneni IP hlavicky
-            memcpy(packet, &ip_head, sizeof(ip));
-            fillTCP(tcp_head, params.polept[i], ip_head);    // naplneni TCP hlavicky
-            memcpy( (packet + sizeof(ip_head)), &tcp_head, sizeof(tcp_head));
-            printf("tcp %d \n",ip_head->ip_sum);
-  printf(" tcp_head->th_dport: %d\n",tcp_head->th_dport);   //doplnit port(cilovy)
+            memcpy(datagram, &ip_head, sizeof(ip));
+            fillTCP(tcp_head, params.polept[i], ip_head);// naplneni TCP hlavicky
+           memcpy( (datagram + sizeof(ip_head)), &tcp_head, sizeof(tcp_head));
+         //send packet
+            if( sendto(mSocket, datagram, ip_head->ip_len, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
+            {
+               printf("chybaaaaaaa...chybaaa\n");
+            }
+            else
+            printf("poslano\n");   
          }
       }
    }
@@ -488,3 +499,4 @@ int main( int argc, char *argv[] ) {
    }
    return 1;
 }
+
