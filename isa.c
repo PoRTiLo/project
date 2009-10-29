@@ -28,6 +28,9 @@ using namespace std;
 #define MIN(X,Y) ( (X) < (Y) ? (X) : (Y) )
 #define MAX(X,Y) ( (X) > (Y) ? (X) : (Y) )
 
+#define PORT 12234
+#define IP ("192.168.2.102")
+#define IP2 ("128.0.0.1")
 //////struktura parametru
 ////////////////////////
 typedef struct argument {
@@ -290,18 +293,19 @@ int checkSum( unsigned short *datagram, int nwords ) {
 }
 ////////////////////////////////////
 
-unsigned short checkSumTCP( TArgum params ) {
+unsigned short checkSumTCP( int src, int dst, unsigned short *addr, int len ) {
 
    struct pom_tcp_head buf;
    u_short ans;
 
    memset(&buf, 0, sizeof(buf));
-//   buf.src.s_addr = ;
-//   buf.dst.s_addr = ;
+   buf.src.s_addr = src;
+   buf.dst.s_addr = dst;
    buf.pad = 0;
    buf.protocol = IPPROTO_TCP;
-//   buf.tcp_len = htons(len);
-//   ans = checkSum((unsigned short *)&buf, 12 + len);
+   buf.tcp_len = htons(len);
+   memcpy(&(buf.tcp_head), addr, len);
+   ans = checkSum((unsigned short *)&buf, 12 + len);
    return ans;
 }
 
@@ -350,8 +354,10 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
    ip_head->ip_ttl = 255;
    ip_head->ip_p = 6;   //IPPROTO_TCP
    ip_head->ip_sum = 0; //prozatim nula, po vypoctu se doplni
-   ip_head->ip_src.s_addr = inet_addr("192.168.2.102");//doplnit IP adresu
+   ip_head->ip_src.s_addr = inet_addr(IP);//doplnit IP adresu
    ip_head->ip_dst.s_addr = sin.sin_addr.s_addr;
+   
+   ip_head->ip_sum = checkSum( (unsigned short *)&ip_head, sizeof(ip));
 
 }
 
@@ -359,8 +365,8 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
 ////  naplneni struktoy TCP hlavicky
 ////////////////
 //
-void fillTCP(struct tcphdr* tcp_head, int i) {
-   tcp_head->th_sport = htons(12234);   //doplnit cilso portu(zdrojovy)
+void fillTCP(struct tcphdr* tcp_head, int i, struct ip* ip_head ) {
+   tcp_head->th_sport = htons(PORT);   //doplnit cilso portu(zdrojovy)
    tcp_head->th_dport = htons(i);   //doplnit port(cilovy)
    tcp_head->th_seq = random();
    tcp_head->th_ack = 0;
@@ -368,8 +374,9 @@ void fillTCP(struct tcphdr* tcp_head, int i) {
    tcp_head->th_off = 0;
    tcp_head->th_flags = TH_SYN;
    tcp_head->th_win = htonl(65535);
-   tcp_head->th_sum = 0;
    tcp_head->th_urp = 0;
+   tcp_head->th_sum = 0;
+   tcp_head->th_sum = checkSumTCP(ip_head->ip_src.s_addr, ip_head->ip_dst.s_addr, (unsigned short *)&tcp_head, sizeof(tcp_head));
 }
 /*
 ////////////////////////////////////////
@@ -421,19 +428,26 @@ int main( int argc, char *argv[] ) {
 
    //ipInterface(params);
    int mSocket;
-   openSocket( &mSocket);
+   openSocket( &mSocket );
 
    if( params.pt == 1 )  // TCP scanning
    {
+
+      u_char *packet;
+      packet = (u_char *)malloc(60);
 
       char datagram[4096]; // bufer, obsahuje IP hlavicku a TCP hlavicku
    
       struct ip *ip_head = (struct ip *) datagram; // IP hlavika 
       struct tcphdr *tcp_head = (struct tcphdr *) ( datagram + sizeof( struct ip) );   // TCP hlavicka
-      struct sockaddr_in sin;
+      struct sockaddr_in sin; //struktur apro vzdalene PC
+      memset(&sin, 0, sizeof(sin));
       sin.sin_family = AF_INET;
-      sin.sin_addr.s_addr = inet_addr(params.addres);
-      sin.sin_port = htons(12234);
+      sin.sin_addr.s_addr = inet_addr(IP2);   //asik ma byt 128.0.0.1
+/////////////doplnit cylovy port, ne zdrojovy
+  //    sin.sin_port = htons(PORT);   //udelano nize
+
+///////////////////////////////////
       memset( datagram, 0, 4096);   // vynulovani datagramu
 //pridat kontrolni soucet
       if(params.polept[0] == 3)  //nastaveni MAx, MIN portu u rozsahu
@@ -452,14 +466,17 @@ int main( int argc, char *argv[] ) {
             for( int l = params.polept[2]; l <= params.polept[3]; l++)
             {
                printf("cislo portu :  %d \n",l);
-               fillTCP(tcp_head, l);
+               fillTCP(tcp_head, l, ip_head);
             }
             i++;
          }
          else
          {
+            sin.sin_port = htons(params.polept[i]);
             fillIP(ip_head, sin);     // naplneni IP hlavicky
-            fillTCP(tcp_head, params.polept[i]);    // naplneni TCP hlavicky
+            memcpy(packet, &ip_head, sizeof(ip));
+            fillTCP(tcp_head, params.polept[i], ip_head);    // naplneni TCP hlavicky
+            memcpy( (packet + sizeof(ip_head)), &tcp_head, sizeof(tcp_head));
             printf("tcp %d \n",ip_head->ip_sum);
   printf(" tcp_head->th_dport: %d\n",tcp_head->th_dport);   //doplnit port(cilovy)
          }
