@@ -33,7 +33,7 @@ using namespace std;
 #define MAX(X,Y) ( (X) > (Y) ? (X) : (Y) )
 
 #define PORT 8234
-#define IP ("128.0.0.1")
+#define IP ("192.168.2.102")
 #define IP2 ("128.0.0.1")
 //////struktura parametru
 ////////////////////////
@@ -361,14 +361,14 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
    ip_head->ip_tos = 0;
    ip_head->ip_len = sizeof(struct ip) + sizeof(struct tcphdr);
    ip_head->ip_id = htonl(54321);
-   ip_head->ip_off= 5;
+   ip_head->ip_off= 0;
    ip_head->ip_ttl = 255;
    ip_head->ip_p = 6;   //IPPROTO_TCP
    ip_head->ip_sum = 0; //prozatim nula, po vypoctu se doplni
    ip_head->ip_src.s_addr = inet_addr(IP);//doplnit IP adresu
    ip_head->ip_dst.s_addr = sin.sin_addr.s_addr;
    
-  // ip_head->ip_sum = checkSum( (unsigned short *)&ip_head, sizeof(ip));
+   ip_head->ip_sum = checkSum( (unsigned short *)&ip_head, sizeof(ip));
 
 }
 
@@ -387,7 +387,7 @@ void fillTCP(struct tcphdr* tcp_head, int i, struct ip* ip_head ) {
    tcp_head->th_win = htonl(65535);
    tcp_head->th_urp = 0;
    tcp_head->th_sum = 0;
-//   tcp_head->th_sum = checkSumTCP(ip_head->ip_src.s_addr, ip_head->ip_dst.s_addr, (unsigned short *)&tcp_head, sizeof(tcp_head));
+   tcp_head->th_sum = checkSumTCP(ip_head->ip_src.s_addr, ip_head->ip_dst.s_addr, (unsigned short *)&tcp_head, sizeof(tcp_head));
 }
 /*
 ////////////////////////////////////////
@@ -484,14 +484,13 @@ int main( int argc, char *argv[] ) {
          {
             sin.sin_port = htons(params.polept[i]);
             fillIP(ip_head, sin);     // naplneni IP hlavicky
-            ip_head->ip_sum = checkSum ((unsigned short *)datagram, ip_head->ip_len >> 1);
-         //   memcpy(datagram, &ip_head, sizeof(ip));
+            memcpy(datagram, &ip_head, sizeof(ip));
             fillTCP(tcp_head, params.polept[i], ip_head);// naplneni TCP hlavicky
            memcpy( (datagram + sizeof(ip_head)), &tcp_head, sizeof(tcp_head));
          //send packet
          char data[123];
          printf("lenght..........-: %d\n",ip_head->ip_len);
-            if( sendto(mSocket, datagram, ip_head->ip_len, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
+            if( sendto(mSocket, datagram, 496, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
             {
                printf("chybaaaaaaa...chybaaa\n");
                perror("pomoooc");
