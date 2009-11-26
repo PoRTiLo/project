@@ -20,6 +20,8 @@
 #include <sstream>
 #include "pcap.h"
 
+#include <net/if_dl.h>
+#include <ifaddrs.h>
 #include <errno.h>
 
 extern int errno;
@@ -33,8 +35,8 @@ using namespace std;
 #define MAX(X,Y) ( (X) > (Y) ? (X) : (Y) )
 
 #define PORT 8234
-#define IP ("128.0.0.1")
-#define IP2 ("128.0.0.1")
+#define IP ("192.168.2.102")
+#define IP2 ("192.168.2.100")
 //////struktura parametru
 ////////////////////////
 typedef struct argument {
@@ -288,9 +290,13 @@ void parserArg(int argc, char *argv[], TArgum &params) {
 ////////////////////////////////////
 //// kontrolni soucet
 ///////////////////////////////////
-int checkSum( unsigned short *datagram, int nwords ) {
+int checkSum( unsigned short *buf, int nwords ) {
    unsigned long sum;
-   for( sum = 0; nwords > 0; nwords-- ) sum += *datagram++;
+
+   for( sum = 0; nwords > 0; nwords-- )
+   {
+      sum += *buf++;
+   }
    sum = (sum >> 16) + (sum & 0xffff);
    sum += (sum >> 16);
    return ~sum;
@@ -325,11 +331,12 @@ int openSocket( int *mSocket) {
          //return chyba;
       printf("Chyba pri tvorbe ocketu\n");
    }
-   const int on = 1;
-   if( setsockopt(*mSocket, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) < 0 )
-   {
-      printf("chyba ve fci openSocket u fce setcoskopt\n");
-   }
+//   int one = 1;
+//   const int *val = &one;
+ //  if( setsockopt(*mSocket, IPPROTO_IP, IP_HDRINCL, val, sizeof(one)) < 0 )
+//   {
+//      printf("chyba ve fci openSocket u fce setcoskopt\n");
+//   }
 
    return 1;// chyba
 }
@@ -361,15 +368,13 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
    ip_head->ip_tos = 0;
    ip_head->ip_len = sizeof(struct ip) + sizeof(struct tcphdr);
    ip_head->ip_id = htonl(54321);
-   ip_head->ip_off= 5;
+   ip_head->ip_off= 0;//5
    ip_head->ip_ttl = 255;
    ip_head->ip_p = 6;   //IPPROTO_TCP
    ip_head->ip_sum = 0; //prozatim nula, po vypoctu se doplni
    ip_head->ip_src.s_addr = inet_addr(IP);//doplnit IP adresu
    ip_head->ip_dst.s_addr = sin.sin_addr.s_addr;
    
-  // ip_head->ip_sum = checkSum( (unsigned short *)&ip_head, sizeof(ip));
-
 }
 
 ///////////////////////////////////////////////////////
@@ -387,12 +392,18 @@ void fillTCP(struct tcphdr* tcp_head, int i, struct ip* ip_head ) {
    tcp_head->th_win = htonl(65535);
    tcp_head->th_urp = 0;
    tcp_head->th_sum = 0;
-//   tcp_head->th_sum = checkSumTCP(ip_head->ip_src.s_addr, ip_head->ip_dst.s_addr, (unsigned short *)&tcp_head, sizeof(tcp_head));
+   tcp_head->th_sum = checkSumTCP(ip_head->ip_src.s_addr, ip_head->ip_dst.s_addr, (unsigned short *)&tcp_head, sizeof(tcp_head));
 }
-/*
+
 ////////////////////////////////////////
 //// zjisteni IP adresy interfacu
 /////////////////////////
+/**
+ * \todo{
+         -dodelat kdyz neni IP
+         -kdyz neni rozhrani pozadovane
+         -priradit ziskanou IP do programu
+ */
 void ipInterface( TArgum params ) {
 
    pcap_if_t *device;
@@ -400,52 +411,53 @@ void ipInterface( TArgum params ) {
    char *errbuf;
    pcap_findalldevs(&device, errbuf);
    pcap_addr_t *adresa;
-  // if(device->name == params.rozhrani)
-   printf("....device%s.. \n ", params.rozhrani);
-  // for(device;device->name == params.rozhrani; device = device->next)
-  // {
-      printf("------------- %s... \n",device->name);
-      printf("------------- %02x \n",device->addresses->addr->sa_data[0]);
-      int i = 0;
 
-      adresa = device->addresses;
+   printf("Hladema Ip adresu inteface %s\n ", params.rozhrani);
 
-    pcap_if_t *d;
-  //    for(d=device;d;d=d->next)
-  //    {   
-   //      printf("------------- %s \n",device->addresses->netmask);
-         printf("......................%d, %s \n",++i, d->name);
-  //       if(d->description)
-  //          printf("des (%s)\n",d->description);
-  //       else
-  //          printf("neni\n");
-  //    }
-   struct sockaddr_in *addres = (struct sockaddr_in *)(adresa->addr);
-   SOURCE_ADDRESS.assign(inet_ntoa(addres->sin_addr)); 
+   bool found = 0;
+// najdeme v seznamu pozadovane rozhrani
+   while( found == 0 )
+   {
+      if( strcmp( device->name, params.rozhrani) == 0 )
+      {
+         adresa = device->addresses;
+         found = 1;
+      }
+      device = device->next;
+   }
+   found = 0;
+   
+   for( adresa; found != 1; adresa = adresa->next )
+   {
+      struct sockaddr_in *addreS = (struct sockaddr_in *)(adresa->addr);
+      struct  pom_tcp_head pom;
+      struct in_addr kol((addreS->sin_addr)); 
+      if(adresa->addr->sa_family == AF_INET)
+      {
+         found = 1;
+      
+         printf("IP adresa em0 %s\n", inet_ntoa(addreS->sin_addr));
+      }
+   }
+
+   pcap_freealldevs(device);
 }
-*/
+      
 
 
-///////////////////////////////
+///////////////////////////////////////////////////////////
 ///   main
-///////////////////////////////
+//////////////////////////////////////////////////////////
 int main( int argc, char *argv[] ) {
 
    TArgum params;
    parserArg(argc, argv, params);   // volani FCE pro argumenty
-  
-   
-   //ipInterface(params);
-
+   ipInterface( params );
    int mSocket;
    openSocket( &mSocket );
 
    if( params.pt == 1 )  // TCP scanning
    {
-
-      //u_char *packet;
-      //packet = (u_char *)malloc(60);
-
       char datagram[4096]; // bufer, obsahuje IP hlavicku a TCP hlavicku
    
       struct ip *ip_head = (struct ip *) datagram; // IP hlavika 
@@ -454,12 +466,8 @@ int main( int argc, char *argv[] ) {
       memset(&sin, '\0', sizeof(sin));
       sin.sin_family = AF_INET;
       sin.sin_addr.s_addr = inet_addr(IP2);   //asik ma byt 128.0.0.1
-/////////////doplnit cylovy port, ne zdrojovy
-     // sin.sin_port = htons(PORT);   //udelano nize
-
-///////////////////////////////////
       memset( datagram, 0, 4096);   // vynulovani datagramu
-//pridat kontrolni soucet
+
       if(params.polept[0] == 3)  //nastaveni MAx, MIN portu u rozsahu
       {
          int max = MAX(params.polept[2], params.polept[3]);
@@ -468,7 +476,6 @@ int main( int argc, char *argv[] ) {
          params.polept[3] = max;
          printf("max : %d, min : %d \n", params.polept[3],params.polept[2]);
       }
-   
       for(int i = 2; params.polept[i] != '\0'; i++)
       {
          if(params.polept[0] == 3)  //porty zadany pomoci rozsahu
@@ -484,22 +491,47 @@ int main( int argc, char *argv[] ) {
          {
             sin.sin_port = htons(params.polept[i]);
             fillIP(ip_head, sin);     // naplneni IP hlavicky
-            ip_head->ip_sum = checkSum ((unsigned short *)datagram, ip_head->ip_len >> 1);
-         //   memcpy(datagram, &ip_head, sizeof(ip));
+            ip_head->ip_sum = checkSum( (unsigned short *)datagram, ip_head->ip_len >> 1);
+//memset(datagram, 0, 4096);
+ //           memcpy(datagram, &ip_head, sizeof(ip));
+
+
+
+//////kontrola obsahu datagrmau/////////////////////
+/* for(int k=0; k<=100;k++)
+   printf("%d, ",datagram[k]);
+   printf("\n ip_head->ip_hl %d\n", ip_head->ip_hl);
+   printf("ip_head->ip_ttl :%d\n", ip_head->ip_ttl);
+   printf("ip-sum :%d\n", ip_head->ip_sum);
+*/
+//////////////////
+
             fillTCP(tcp_head, params.polept[i], ip_head);// naplneni TCP hlavicky
-           memcpy( (datagram + sizeof(ip_head)), &tcp_head, sizeof(tcp_head));
-         //send packet
-         char data[123];
-         printf("lenght..........-: %d\n",ip_head->ip_len);
+//           memcpy( (datagram + sizeof(ip_head)), &tcp_head, sizeof(tcp_head));
+
+  // tcp_head->th_sum = checkSum( (unsigned short*)datagram, ip_head->ip_len>>1);
+   int one = 1;
+   const int *val = &one;
+  if( setsockopt(mSocket, IPPROTO_IP, IP_HDRINCL, val, sizeof(one)) < 0 )
+   {
+      printf("chyba ve fci openSocket u fce setcoskopt\n");
+}
+//send packet
             if( sendto(mSocket, datagram, ip_head->ip_len, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
             {
-               printf("chybaaaaaaa...chybaaa\n");
-               perror("pomoooc");
-             cerr<<  strerror(errno)<<endl;  
+               cerr<<  strerror(errno)<<endl;  
             }
             else
-            printf("poslano\n");   
-         }
+            {
+               printf("poslano\n");  
+               printf("tcp check sum : %d\n", tcp_head->th_sum);
+               printf("IP check sum : %d\n", ip_head->ip_sum);
+            }
+/*for(int k=0; k<=100;k++)
+printf("%d, ",datagram[k]);
+printf("\n ip_head->ip_hl %d\n", ip_head->ip_hl);
+printf("ip_head->ip_ttl :%d\n", ip_head->ip_ttl);*/
+}
       }
    }
    if( params.pu == 1 ) // UDP scanning
@@ -508,4 +540,3 @@ int main( int argc, char *argv[] ) {
    }
    return 1;
 }
-
