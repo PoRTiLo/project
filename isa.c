@@ -28,7 +28,7 @@ extern int errno;
  
 using namespace std;
 #define BUF 100
-#define ROZ 4
+#define ROZ 3 
 #define CISLO 10 
 
 #define MIN(X,Y) ( (X) < (Y) ? (X) : (Y) )
@@ -64,7 +64,7 @@ struct pom_tcp_head {
    struct tcphdr tcp_head;
 };
 /////////////////////////////
-
+   
 /////////////////////////////
 ///   parsrovani argumentu
 ////////////////////////////
@@ -331,12 +331,12 @@ int openSocket( int *mSocket) {
          //return chyba;
       printf("Chyba pri tvorbe ocketu\n");
    }
-//   int one = 1;
-//   const int *val = &one;
- //  if( setsockopt(*mSocket, IPPROTO_IP, IP_HDRINCL, val, sizeof(one)) < 0 )
-//   {
-//      printf("chyba ve fci openSocket u fce setcoskopt\n");
-//   }
+   int one = 1;
+   const int *val = &one;
+   if( setsockopt(*mSocket, IPPROTO_IP, IP_HDRINCL, val, sizeof(one)) < 0 )
+   {
+      printf("chyba ve fci openSocket u fce setcoskopt\n");
+   }
 
    return 1;// chyba
 }
@@ -387,12 +387,12 @@ void fillTCP(struct tcphdr* tcp_head, int i, struct ip* ip_head ) {
    tcp_head->th_seq = random();
    tcp_head->th_ack = 0;
    tcp_head->th_x2 = 0;
-   tcp_head->th_off = 0;
+   tcp_head->th_off = 5;//5;//5;//5;//5;//0;
    tcp_head->th_flags = TH_SYN;
    tcp_head->th_win = htonl(65535);
    tcp_head->th_urp = 0;
    tcp_head->th_sum = 0;
-   tcp_head->th_sum = checkSumTCP(ip_head->ip_src.s_addr, ip_head->ip_dst.s_addr, (unsigned short *)&tcp_head, sizeof(tcp_head));
+   tcp_head->th_sum = 0xacf7;//checkSumTCP(ip_head->ip_src.s_addr, ip_head->ip_dst.s_addr, (unsigned short *)&tcp_head, sizeof(tcp_head));
 }
 
 ////////////////////////////////////////
@@ -412,7 +412,7 @@ void ipInterface( TArgum params ) {
    pcap_findalldevs(&device, errbuf);
    pcap_addr_t *adresa;
 
-   printf("Hladema Ip adresu inteface %s\n ", params.rozhrani);
+   printf("Hladema Ip adresu inteface %s,\n ", params.rozhrani);
 
    bool found = 0;
 // najdeme v seznamu pozadovane rozhrani
@@ -426,7 +426,6 @@ void ipInterface( TArgum params ) {
       device = device->next;
    }
    found = 0;
-   
    for( adresa; found != 1; adresa = adresa->next )
    {
       struct sockaddr_in *addreS = (struct sockaddr_in *)(adresa->addr);
@@ -439,11 +438,14 @@ void ipInterface( TArgum params ) {
          printf("IP adresa em0 %s\n", inet_ntoa(addreS->sin_addr));
       }
    }
-
    pcap_freealldevs(device);
 }
       
 
+void packet_handler(u_char *param, const struct pcap_pkthdr *header, const u_char *pkt_data) {
+//   struct tm *ltime;
+//   char timestr[16];
+}
 
 ///////////////////////////////////////////////////////////
 ///   main
@@ -492,30 +494,10 @@ int main( int argc, char *argv[] ) {
             sin.sin_port = htons(params.polept[i]);
             fillIP(ip_head, sin);     // naplneni IP hlavicky
             ip_head->ip_sum = checkSum( (unsigned short *)datagram, ip_head->ip_len >> 1);
-//memset(datagram, 0, 4096);
- //           memcpy(datagram, &ip_head, sizeof(ip));
 
-
-
-//////kontrola obsahu datagrmau/////////////////////
-/* for(int k=0; k<=100;k++)
-   printf("%d, ",datagram[k]);
-   printf("\n ip_head->ip_hl %d\n", ip_head->ip_hl);
-   printf("ip_head->ip_ttl :%d\n", ip_head->ip_ttl);
-   printf("ip-sum :%d\n", ip_head->ip_sum);
-*/
 //////////////////
 
             fillTCP(tcp_head, params.polept[i], ip_head);// naplneni TCP hlavicky
-//           memcpy( (datagram + sizeof(ip_head)), &tcp_head, sizeof(tcp_head));
-
-  // tcp_head->th_sum = checkSum( (unsigned short*)datagram, ip_head->ip_len>>1);
-   int one = 1;
-   const int *val = &one;
-  if( setsockopt(mSocket, IPPROTO_IP, IP_HDRINCL, val, sizeof(one)) < 0 )
-   {
-      printf("chyba ve fci openSocket u fce setcoskopt\n");
-}
 //send packet
             if( sendto(mSocket, datagram, ip_head->ip_len, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
             {
@@ -526,11 +508,39 @@ int main( int argc, char *argv[] ) {
                printf("poslano\n");  
                printf("tcp check sum : %d\n", tcp_head->th_sum);
                printf("IP check sum : %d\n", ip_head->ip_sum);
+////////////////////////////////
+/////////zachytavani paketu
+
+
+
+pcap_t *handle;
+char errbuf[PCAP_ERRBUF_SIZE];
+struct bpf_program fp; //zkompilovany filtr
+bpf_u_int32 net;  //OUR IP
+handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, 1000, errbuf);
+if( handle == NULL )
+{
+   printf("chyba u pcap open %s:%s\n",params.rozhrani, errbuf);
+  // pcap_freealldevs(handle);
+}
+// compile filter
+char filter[] = "dst host 192.168.2.102 && tcp port 8000 && tcp port 8234";
+
+if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
+{
+   printf("chyba pri kompilaci filtru pro achyvani paketu \n");
+}
+// nastaveni filtru
+if( pcap_setfilter(handle, &fp) == -1 )
+{
+   printf("chyba pri nastavovani fitlru\n");
+}
+//start capture
+pcap_dispatch(handle, 10, packet_handler, NULL);
+
+
+//////////
             }
-/*for(int k=0; k<=100;k++)
-printf("%d, ",datagram[k]);
-printf("\n ip_head->ip_hl %d\n", ip_head->ip_hl);
-printf("ip_head->ip_ttl :%d\n", ip_head->ip_ttl);*/
 }
       }
    }
