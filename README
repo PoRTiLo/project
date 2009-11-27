@@ -1,10 +1,32 @@
-vs
-v
-vs
-dv
-sd
-f
-sdf
-sv
-2
-kus:
+README : ISA - Sitove aplikace a sprava siti
+         Varianta - Jednoduchy sitovy TCP/UDP scanner
+
+AUTHORS : xsendl00, xsendl00@stud.fit.vutbr.cz, Jaroslav Sendler
+          27.11.2009
+
+THANKS : school
+
+Files : scan.c
+        makefile
+        README
+        manual.pdf
+
+Changelog : Program pracuje na bazi jednoducheho sitoveho scanneru. Pro svou komunikaci vyuziva rozhrani schranek BSD sockets. Jiz zminovany scanner komunikuje pomoci protokolu TCP nebo UDP. Cilem projektu je ziskani pozadovanych informaci o portech na urcenem PC. Porty se mohou nachazet ve stavu (otevreny, uzavrent neo filtrovany).
+
+         parametry:
+                  -pt [cislo portu] -povinny
+                  -pu [cislo portu] -povinny
+                  -i  [rozhrani] -povinny
+                  [domain_name | IP_adresa] -povinny
+                  -help | - HELP
+
+         Pouziti: proskenuje TCP, porty vypsane vyctem na sitovem rozhrani em0 
+                     :~$ ./scan -pt 23,34,45 -i em0 192.168.2.100
+                  proskenuje UDP, porty vypsane intervalem na sitovem rozhrani em0
+                     :~$ ./scan -pu 23400-23450 -i em0 192.168.2.100
+
+
+INSTALL : Program je vytvoren a testovan na serveru FreeBSD 7.2. Prelozite ho spustenim pridavneho souboru "make".
+                  :~$ make
+
+COPYING / LICENCE : VUT-FIT
