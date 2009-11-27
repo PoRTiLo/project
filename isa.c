@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
+#include <net/ethernet.h>
 #include <string>
 #include <string.h>
 #include <ctype.h>
@@ -56,12 +57,14 @@ typedef struct argument {
 // pro generovani kontrolniho souctu
 
 struct pom_tcp_head {
-   struct in_addr src;
-   struct in_addr dst;
-   unsigned char pad;
-   unsigned char protocol;
-   unsigned short tcp_len;
-   struct tcphdr tcp_head;
+   u_int32_t p_src;
+   u_int32_t p_dst;
+   u_int8_t p_pad;
+   u_int8_t p_protocol;
+   u_int16_t p_tcplen;
+};
+struct pom_head {
+   u_int32_t sourceIP;
 };
 /////////////////////////////
    
@@ -303,7 +306,7 @@ int checkSum( unsigned short *buf, int nwords ) {
 }
 ////////////////////////////////////
 
-unsigned short checkSumTCP( int src, int dst, unsigned short *addr, int len ) {
+/*unsigned short checkSumTCP( int src, int dst, unsigned short *addr, int len ) {
 
    struct pom_tcp_head buf;
    u_short ans;
@@ -318,7 +321,7 @@ unsigned short checkSumTCP( int src, int dst, unsigned short *addr, int len ) {
    ans = checkSum((unsigned short *)&buf, 12 + len);
    return ans;
 }
-
+*/
 ///////////////////////////////////
 ////  vytvoreni socketu
 //////////////////////////////////
@@ -382,17 +385,18 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin) {
 ////////////////
 //
 void fillTCP(struct tcphdr* tcp_head, int i, struct ip* ip_head ) {
+   
    tcp_head->th_sport = htons(PORT);   //doplnit cilso portu(zdrojovy)
    tcp_head->th_dport = htons(i);   //doplnit port(cilovy)
    tcp_head->th_seq = random();
    tcp_head->th_ack = 0;
    tcp_head->th_x2 = 0;
-   tcp_head->th_off = 5;//5;//5;//5;//5;//0;
+   tcp_head->th_off = 5;//0;
    tcp_head->th_flags = TH_SYN;
    tcp_head->th_win = htonl(65535);
    tcp_head->th_urp = 0;
-   tcp_head->th_sum = 0;
-   tcp_head->th_sum = 0xacf7;//checkSumTCP(ip_head->ip_src.s_addr, ip_head->ip_dst.s_addr, (unsigned short *)&tcp_head, sizeof(tcp_head));
+//   tcp_head->th_sum = 0;
+//   tcp_head->th_sum = 0xacf7;//checkSumTCP(ip_head->ip_src.s_addr, ip_head->ip_dst.s_addr, (unsigned short *)&tcp_head, sizeof(tcp_head));
 }
 
 ////////////////////////////////////////
@@ -443,8 +447,25 @@ void ipInterface( TArgum params ) {
       
 
 void packet_handler(u_char *param, const struct pcap_pkthdr *header, const u_char *pkt_data) {
-//   struct tm *ltime;
-//   char timestr[16];
+
+
+printf("ve fci pro rozbor prijatyh dat\n");
+
+printf("cas paketu :%s\n", ctime((const time_t *)&((header->ts.tv_sec))));
+   struct ether_header *ethh;
+   struct ip *iph;
+   struct tcphdr *tcph;
+   //struct u_char *payload;
+
+   iph = (struct ip *)(pkt_data + sizeof(struct ether_header));
+   int iplen = iph->ip_hl*4;
+   
+   tcph = (struct tcphdr *)(pkt_data + sizeof(struct ether_header)+iplen);
+
+   if( tcph->th_flags == 0x14 )
+      printf("je to doma\n");
+   else
+      printf("nekde chyba\n");
 }
 
 ///////////////////////////////////////////////////////////
@@ -491,13 +512,25 @@ int main( int argc, char *argv[] ) {
          }
          else
          {
-            sin.sin_port = htons(params.polept[i]);
-            fillIP(ip_head, sin);     // naplneni IP hlavicky
-            ip_head->ip_sum = checkSum( (unsigned short *)datagram, ip_head->ip_len >> 1);
+            //sin.sin_port = htons(params.polept[i]);
+            //fillIP(ip_head, sin);     // naplneni IP hlavicky
+            //ip_head->ip_sum = checkSum( (unsigned short *)datagram, ip_head->ip_len >> 1);
 
 //////////////////
 
             fillTCP(tcp_head, params.polept[i], ip_head);// naplneni TCP hlavicky
+   struct pom_tcp_head *pseudo = (struct pom_tcp_head *)((char*)tcp_head - sizeof(struct pom_tcp_head));
+
+   pseudo->p_src = inet_addr("192.168.2.102");
+   pseudo->p_dst = inet_addr(IP2);
+   pseudo->p_protocol = IPPROTO_TCP;
+   pseudo->p_tcplen = htons(sizeof(struct tcphdr));
+
+   tcp_head->th_sum = checkSum((u_short*)pseudo, sizeof(struct pom_tcp_head)+sizeof(struct tcphdr)); 
+
+            sin.sin_port = htons(params.polept[i]);
+            fillIP(ip_head, sin);     // naplneni IP hlavicky
+            ip_head->ip_sum = checkSum( (unsigned short *)datagram, ip_head->ip_len >> 1);
 //send packet
             if( sendto(mSocket, datagram, ip_head->ip_len, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
             {
@@ -524,8 +557,8 @@ if( handle == NULL )
   // pcap_freealldevs(handle);
 }
 // compile filter
-char filter[] = "dst host 192.168.2.102 && tcp port 8000 && tcp port 8234";
-
+char filter[] = "";//"tcp port 8000";//"dst host 192.168.2.102 && tcp port 8000 || tcp port 8234";
+/*
 if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
 {
    printf("chyba pri kompilaci filtru pro achyvani paketu \n");
@@ -535,9 +568,11 @@ if( pcap_setfilter(handle, &fp) == -1 )
 {
    printf("chyba pri nastavovani fitlru\n");
 }
+*/
 //start capture
-pcap_dispatch(handle, 10, packet_handler, NULL);
-
+printf("zacatek zachytavani\n");
+pcap_dispatch(handle, -1, packet_handler, NULL);
+printf("konec zachytavani\n");
 
 //////////
             }
