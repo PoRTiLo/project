@@ -8,6 +8,8 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
+#include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
 #include <net/ethernet.h>
 #include <string>
 #include <string.h>
@@ -47,6 +49,7 @@ typedef struct argument {
    unsigned short pu;   // aktivni v 1
    int *polept;
    int *polepu;
+  // unsigned short size;
    char rozhrani[ROZ];   // 1 = em0; 2 = ...
    char hostname_ip[BUF];
    char *addres;
@@ -112,7 +115,6 @@ void parserArg(int argc, char *argv[], TArgum &params) {
       fprintf(stderr, "Spatny pocet argumentu\n");
       exit(-1);
    }
-
    for(int i = 1; i < argc; i++)
    {
       if( (argv[i][0] == '-') && (argv[i][2] == 't')
@@ -164,7 +166,6 @@ void parserArg(int argc, char *argv[], TArgum &params) {
          {
             carka = carka + 3;
          }
-
          //alokace pole 
          int pozice1 = 0;//pozice pri nacitani cisla, pom, pole
          int pozice2 = 2;//pozice pro nacitani portu do pole
@@ -353,7 +354,7 @@ void parserArg(int argc, char *argv[], TArgum &params) {
                {
                   if( atoi(cislo) > 0 && atoi(cislo) <= 65355 )
                   {
-                     params.polept[pozice2] = atoi(cislo);//ulozeni cisla do pole
+                     params.polepu[pozice2] = atoi(cislo);//ulozeni cisla do pole
                      pozice2++;
                   }
                   else
@@ -420,6 +421,10 @@ void parserArg(int argc, char *argv[], TArgum &params) {
 
          i++;
          params.pu = 1;
+
+        // for(int pu = 0; params.polepu[pu] != '\0'; pu++)
+        // params.size=pu;
+
       }
       else if( argv[i][0] == '-' && argv[i][1] == 'i')
       {
@@ -453,7 +458,6 @@ void parserArg(int argc, char *argv[], TArgum &params) {
             params.addres = argv[i];
          }
       }
-
    }
 } 
 
@@ -482,19 +486,30 @@ int checkSum( unsigned short *buf, int nwords ) {
  * Vytvoreni socketu
  *
  * @param[out] *mSocket Ukazatel na vytvoreny socket.
+ * @param[i]   typ      Typ posilaneho paketu TCP/UDP
  * @return     error    Obsahuje chybu.
  */
-int openSocket( int *mSocket) {
+int openSocket( int *mSocket, int typ ) {
 
    int error = 0;
    
    // otevreni socketu
-   if( (*mSocket = socket(PF_INET, SOCK_RAW, IPPROTO_TCP) ) < 0 )
-   {
-      error = -1;
-      return error;
+   if( typ == 1 ) // TCP
+   {   
+      if( (*mSocket = socket(PF_INET, SOCK_RAW, IPPROTO_TCP) ) < 0 )
+      {
+         error = -1;
+         return error;
+      }
    }
-
+   else
+   {
+      if( (*mSocket = socket(PF_INET, SOCK_RAW, IPPROTO_UDP) ) < 0 )
+      {
+         error = -1;
+         return error;
+      } 
+   }
    int one = 1;
    const int *val = &one;
    if( setsockopt(*mSocket, IPPROTO_IP, IP_HDRINCL, val, sizeof(one)) < 0 )
@@ -550,6 +565,27 @@ void  fillIP(struct ip* ip_head, struct sockaddr_in sin, TArgum params) {
 
 
 /**
+ * Naplneni IP hlavicky pro pakety UDP
+ *
+ * @param[out] ipheadUDP
+ * @param[in]  din
+ * @param[in]  sin
+ */
+void fillIPudp( struct ip* ip_headUDP, struct sockaddr_in din, struct sockaddr_in sin ) {
+
+   ip_headUDP->ip_hl = 5;  // velikost hlavicky (typisky 20 bytu)
+   ip_headUDP->ip_v = 4;   // verze IP protokolu
+   ip_headUDP->ip_tos = 16;
+   ip_headUDP->ip_len = sizeof(struct ip) + sizeof(struct udphdr);
+   ip_headUDP->ip_id = htonl(54321);
+   ip_headUDP->ip_off= 0;//5
+   ip_headUDP->ip_ttl = 255;
+   ip_headUDP->ip_p = 17;   //IPPROTO_TCP
+   ip_headUDP->ip_sum = 0; //prozatim nula, po vypoctu se doplni
+   ip_headUDP->ip_src.s_addr = sin.sin_addr.s_addr;
+   ip_headUDP->ip_dst.s_addr = din.sin_addr.s_addr;
+}
+/**
  * Naplneni struktury TCP hlavicky
  *
  * @param[out] tcp_head Struktura, potreban pro odeslani paketu 
@@ -570,6 +606,19 @@ void fillTCP( struct tcphdr* tcp_head, int i ) {
 
 
 /**
+ * Naplneni struktury UDP hlavicky
+ *
+ * @param[out] udp_head Struktura potrebna pro odeslani paketu
+ * @param[in]  i        Cislo aktualne prohledavaneho portu
+ */
+void fillUDP( struct udphdr* udp_head, int i ) {
+
+   udp_head->uh_sport = htons(PORT);
+   udp_head->uh_dport = htons(i);
+   udp_head->uh_ulen = htons(sizeof(struct udphdr));
+}
+
+/**
  * Zjisteni IP adresy pozadovaneho interface
  *
  * @param[out] params Struktura obsahujici nazev interface a budouci IP SRC
@@ -579,16 +628,9 @@ int ipInterface( TArgum &params ) {
 
    int error = 1;
    pcap_if_t *device;
-// divne chovani, jen oprave pole
-   int pt,pu;
-   for(pt=0;params.polept[pt]!='\0';pt++);
-   for(pu=0;params.polept[pu]!='\0';pu++);
 
    char *errbuf;
    pcap_findalldevs(&device, errbuf);
-
-//   params.polept[pt]='\0';
-//   params.polept[pu]='\0';
 
    pcap_addr_t *adresa;
 
@@ -626,29 +668,55 @@ int ipInterface( TArgum &params ) {
    }
    pcap_freealldevs(device);
 
-
-   params.polept[pt]='\0';
-   params.polept[pu]='\0';
    return error;
 }
-      
-
-void packet_handler(u_char *param, const struct pcap_pkthdr *header, const u_char *pkt_data) {
 
 
-//printf("ve fci pro rozbor prijatyh dat\n");
+/**
+ * Zjisteni obsahu chyceneho paketu jako odpoved na UDP paket
+ *
+ * @param[in] *param
+ * @param[in] *head
+ * @param[in] *pkt_data
+ */      
+void packet_handlerUDP( u_char *param, const struct pcap_pkthdr *head, const u_char *pkt_data) {
 
-//printf("cas paketu :%s\n", ctime((const time_t *)&((header->ts.tv_sec))));
-   //struct ether_header *ethh;
+   // pomocne struktury
+   struct ip *iph;
+   struct icmphdr *icmph;
+   // preskoceni ethernet hlavicky
+   iph = (struct ip *)(pkt_data + sizeof(struct ether_header));
+   int iplen = iph->ip_hl*4;  // delka hlavicky IP
+   // preskoceni IP hlavicky
+   icmph = (struct icmphdr *)(pkt_data + sizeof(struct ether_header)+iplen);
+
+   if( icmph->icmp_type == 3 )
+      fprintf(stdout, " closed\n");
+   else
+      fprintf(stdout, " open\n");
+     
+}
+
+
+/**
+ * Zjisteni obsahu chyceneho paketu jako odpoved na TCP paket
+ *
+ * @param[in] *param
+ * @param[in] *head
+ * @param[in] *pkt_data
+ */      
+void packet_handlerTCP(u_char *param, const struct pcap_pkthdr *header, const u_char *pkt_data) {
+
+   // pomocne struktury
    struct ip *iph;
    struct tcphdr *tcph;
-   //struct u_char *payload;
 
+   // preskoceni ethernet hlavicky
    iph = (struct ip *)(pkt_data + sizeof(struct ether_header));
    int iplen = iph->ip_hl*4;
    
+   // preskoceni IP hlavicky
    tcph = (struct tcphdr *)(pkt_data + sizeof(struct ether_header)+iplen);
-//printf( "tcp-h_flagf : %s\n", tcph->th_flags);
 
   // tcp_head->th_sport = htons(PORT);   //cilso portu(zdrojovy)
   // printf("//// %d\n",ntohs(tcph->th_sport));
@@ -662,7 +730,6 @@ void packet_handler(u_char *param, const struct pcap_pkthdr *header, const u_cha
 ///   main
 //////////////////////////////////////////////////////////
 int main( int argc, char *argv[] ) {
-
    int error;
    TArgum params;
    memset(params.rozhrani, '\0', sizeof(params.rozhrani));
@@ -677,32 +744,34 @@ int main( int argc, char *argv[] ) {
          default: break;
       }
    }
+      char datagram[4096]; // bufer, obsahuje IP hlavicku a TCP hlavicku
+      
+ 
+      struct ip *ip_head = (struct ip *) datagram; // IP hlavika 
+      struct tcphdr *tcp_head = (struct tcphdr *) ( datagram + sizeof( struct ip) );   // TCP hlavicka
+      struct sockaddr_in sin, din; //struktura pro vzdalene PC
+      memset(&sin, '\0', sizeof(sin));
+      sin.sin_family = AF_INET;
+      sin.sin_addr.s_addr = inet_addr(params.addres);
+      memset( datagram, 0, 4096);   // vynulovani datagramu
 
-   int mSocket;
-   if( (error = openSocket( &mSocket )) != 1)
-   {
-      switch( error ) {
-         case -1: fprintf(stderr, "CHYBA pri vytvareni socketu\n");
-                  exit(-1);
-                  break;
-         case -2: fprintf(stderr, "CHYBA pri inicializaci socketu\n");
-                  exit(-1);
-                  break;
-         default: break;
-      }
-   }
 
    if( params.pt == 1 )  // TCP scanning
    {
-      char datagram[4096]; // bufer, obsahuje IP hlavicku a TCP hlavicku
-   
-      struct ip *ip_head = (struct ip *) datagram; // IP hlavika 
-      struct tcphdr *tcp_head = (struct tcphdr *) ( datagram + sizeof( struct ip) );   // TCP hlavicka
-      struct sockaddr_in sin; //struktur apro vzdalene PC
-      memset(&sin, '\0', sizeof(sin));
-      sin.sin_family = AF_INET;
-      sin.sin_addr.s_addr = inet_addr(params.addres);   //asik ma byt 128.0.0.1
-      memset( datagram, 0, 4096);   // vynulovani datagramu
+      int typ = 1;
+      int mSocket;
+      if( (error = openSocket( &mSocket, typ )) != 1)
+      {
+         switch( error ) {
+            case -1: fprintf(stderr, "CHYBA pri vytvareni socketu\n");
+                     exit(-1);
+                     break;
+            case -2: fprintf(stderr, "CHYBA pri inicializaci socketu\n");
+                     exit(-1);
+                     break;
+            default: break;
+         }
+      }
 
       if(params.polept[0] == 3)  //nastaveni MAx, MIN portu u rozsahu
       {
@@ -718,14 +787,64 @@ int main( int argc, char *argv[] ) {
          {
             for( int l = params.polept[2]; l <= params.polept[3]; l++)
             {
-               printf("cislo portu :  %d \n",l);
-               fillTCP(tcp_head, l);
+               fillTCP(tcp_head, l);// naplneni TCP hlavicky
+               struct pom_tcp_head *pseudo = (struct pom_tcp_head *)((char*)tcp_head - sizeof(struct pom_tcp_head));
+               pseudo->p_src = inet_addr(inet_ntoa(params.src_addr->sin_addr));
+               pseudo->p_dst = inet_addr(params.addres);
+               pseudo->p_protocol = IPPROTO_TCP;
+               pseudo->p_tcplen = htons(sizeof(struct tcphdr));
+
+               tcp_head->th_sum = checkSum((u_short*)pseudo, sizeof(struct pom_tcp_head)+sizeof(struct tcphdr)); 
+
+               sin.sin_port = htons(l);
+               fillIP(ip_head, sin, params);     // naplneni IP hlavicky
+               ip_head->ip_sum = checkSum( (unsigned short *)datagram, ip_head->ip_len >> 1);
+               //send packet
+               if( sendto(mSocket, datagram, ip_head->ip_len, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
+               {
+                  strerror(errno);  
+               }
+               else
+               {
+               /////////zachytavani paketu
+                  pcap_t *handle;
+                  char errbuf[PCAP_ERRBUF_SIZE];
+                  struct bpf_program fp; //zkompilovany filtr
+                  bpf_u_int32 net;  //OUR IP
+                  handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, 100, errbuf);
+                  if( handle == NULL )
+                  {
+                     printf("chyba u pcap open %s:%s\n",params.rozhrani, errbuf);
+                     pcap_freealldevs((pcap_if_t *)handle);
+                  }
+/*
+                  // compile filter
+                  char filter[] = "tcp[0:2]=8000 && tcp[2:2]=8234";// && ip[16:4]=192.168.2.102";// && tcp port 8000 || tcp port 8234";
+
+                  if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
+                  {
+                     printf("chyba pri kompilaci filtru pro achyvani paketu \n");
+                  }
+                  // nastaveni filtru
+                  if( pcap_setfilter(handle, &fp) == -1 )
+                  {
+                     printf("chyba pri nastavovani fitlru\n");
+                  }
+*/
+                  //start capture
+                  printf("zacatek zachytavani\n");
+                  fprintf(stdout,"%d/tcp",l);
+                  pcap_dispatch(handle, 1, packet_handlerTCP, NULL);
+                  //pcap_loop(handle, 0, packet_handler, NULL);
+                  printf("\nkonec zachytavani\n");
+
+                  pcap_close(handle);
+               }
             }
-            i++;
+            break;
          }
          else  // cilso portu zadane vyctem nebo cislem
          {
-printf("params.....%d\n", params.polept[i]);
             fillTCP(tcp_head, params.polept[i]);// naplneni TCP hlavicky
             struct pom_tcp_head *pseudo = (struct pom_tcp_head *)((char*)tcp_head - sizeof(struct pom_tcp_head));
             pseudo->p_src = inet_addr(inet_ntoa(params.src_addr->sin_addr));
@@ -773,7 +892,7 @@ printf("params.....%d\n", params.polept[i]);
                //start capture
                printf("zacatek zachytavani\n");
                fprintf(stdout,"%d/tcp",params.polept[i]);
-               pcap_dispatch(handle, 1, packet_handler, NULL);
+               pcap_dispatch(handle, 1, packet_handlerTCP, NULL);
                //pcap_loop(handle, 0, packet_handler, NULL);
                printf("\nkonec zachytavani\n");
 
@@ -785,7 +904,149 @@ printf("params.....%d\n", params.polept[i]);
    }
    if( params.pu == 1 ) // UDP scanning
    {
-      printf("ahoj");
+      struct udphdr *udp_head = (struct udphdr *)(datagram + sizeof(struct ip) );     
+      struct ip *ip_headUDP = (struct ip *) datagram; // IP hlavika 
+      int typ = 2;
+      int mSocket;
+      if( (error = openSocket( &mSocket, typ )) != 1)
+      {
+         switch( error ) {
+            case -1: fprintf(stderr, "CHYBA pri vytvareni socketu\n");
+                     exit(-1);
+                     break;
+            case -2: fprintf(stderr, "CHYBA pri inicializaci socketu\n");
+                     exit(-1);
+                     break;
+            default: break;
+         }
+      }
+//      params.polepu[params.size+1] = '\0';   //kvulipodivnemu chovani
+      if(params.polepu[0] == 3)  //nastaveni MAx, MIN portu u rozsahu
+      {
+         int max = MAX(params.polepu[2], params.polepu[3]);
+         int min = MIN(params.polepu[2], params.polepu[3]);
+         params.polepu[2] = min;
+         params.polepu[3] = max;
+      }
+      for(int i = 2; params.polepu[i] != '\0'; i++)
+      {
+         memset(datagram, '\0', sizeof(datagram));
+         if(params.polepu[0] == 3)  //porty zadany pomoci rozsahu
+         {
+            for( int l = params.polepu[2]; l <= params.polepu[3]; l++)
+            {
+               fillUDP(udp_head, l);   // naplneni UDP hlavicky
+               din.sin_port = htons(l);//cilovy port
+               sin.sin_port = htons(PORT);
+               din.sin_family = AF_INET;
+               sin.sin_addr.s_addr = params.src_addr->sin_addr.s_addr;
+               din.sin_addr.s_addr = inet_addr(params.addres);
+               fillIPudp(ip_headUDP, din, sin);     // naplneni IP hlavicky
+               ip_head->ip_sum = checkSum( (unsigned short *)datagram, ip_head->ip_len >> 1);
+               //send packet
+               if( sendto(mSocket, datagram, ip_head->ip_len, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
+               {
+                  strerror(errno);  
+               }
+               else
+               {
+               /////////zachytavani paketu
+                  pcap_t *handle;
+                  char errbuf[PCAP_ERRBUF_SIZE];
+                  struct bpf_program fp; //zkompilovany filtr
+                  bpf_u_int32 net;  //OUR IP
+                  handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, 100, errbuf);
+                  if( handle == NULL )
+                  {
+                     printf("chyba u pcap open %s:%s\n",params.rozhrani, errbuf);
+                     pcap_freealldevs((pcap_if_t *)handle);
+                  }
+/*
+                  // compile filter
+                  char filter[] = "tcp[0:2]=8000 && tcp[2:2]=8234";// && ip[16:4]=192.168.2.102";// && tcp port 8000 || tcp port 8234";
+
+                  if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
+                  {
+                     printf("chyba pri kompilaci filtru pro achyvani paketu \n");
+                  }
+                  // nastaveni filtru
+                  if( pcap_setfilter(handle, &fp) == -1 )
+                  {
+                     printf("chyba pri nastavovani fitlru\n");
+                  }
+*/
+                  //start capture
+                  printf("zacatek zachytavani\n");
+                  fprintf(stdout,"%d/udp",l);
+                  pcap_dispatch(handle, 1, packet_handlerUDP, NULL);
+                  //pcap_loop(handle, 0, packet_handler, NULL);
+                  printf("\nkonec zachytavani\n");
+
+                  pcap_close(handle);
+                  //pcap_free(&fp);
+               }
+            }
+            i++;
+            break;
+         }
+         else  // cilso portu zadane vyctem nebo cislem
+         {
+            fillUDP(udp_head, params.polepu[i]);   // naplneni UDP hlavicky
+            din.sin_port = htons(params.polepu[i]);//cilovy port
+            sin.sin_port = htons(PORT);
+            din.sin_family = AF_INET;
+            sin.sin_addr.s_addr = params.src_addr->sin_addr.s_addr;
+            din.sin_addr.s_addr = inet_addr(params.addres);
+            fillIPudp(ip_headUDP, din, sin);     // naplneni IP hlavicky
+            ip_head->ip_sum = checkSum( (unsigned short *)datagram, ip_head->ip_len >> 1);
+            //send packet
+            if( sendto(mSocket, datagram, ip_head->ip_len, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
+            {
+               strerror(errno);  
+            }
+            else
+            {
+            /////////zachytavani paketu
+               pcap_t *handle;
+               char errbuf[PCAP_ERRBUF_SIZE];
+               struct bpf_program fp; //zkompilovany filtr
+               bpf_u_int32 net;  //OUR IP
+               handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, 100, errbuf);
+               if( handle == NULL )
+               {
+                  printf("chyba u pcap open %s:%s\n",params.rozhrani, errbuf);
+                  pcap_freealldevs((pcap_if_t *)handle);
+               }
+/*
+               // compile filter
+               char filter[] = "tcp[0:2]=8000 && tcp[2:2]=8234";// && ip[16:4]=192.168.2.102";// && tcp port 8000 || tcp port 8234";
+
+               if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
+               {
+                  printf("chyba pri kompilaci filtru pro achyvani paketu \n");
+               }
+               // nastaveni filtru
+               if( pcap_setfilter(handle, &fp) == -1 )
+               {
+                  printf("chyba pri nastavovani fitlru\n");
+               }
+*/
+               //start capture
+               printf("zacatek zachytavani\n");
+               fprintf(stdout,"%d/udp",params.polepu[i]);
+               pcap_dispatch(handle, 1, packet_handlerUDP, NULL);
+               //pcap_loop(handle, 0, packet_handler, NULL);
+               printf("\nkonec zachytavani\n");
+
+               pcap_close(handle);
+               //pcap_free(&fp);
+            }
+         }
+      }
    }
+   if( params.pu == 1 )
+      free(params.polepu);
+   if( params.pt == 1 )
+      free(params.polept);
    return 1;
 }
