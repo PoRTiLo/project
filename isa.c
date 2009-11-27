@@ -36,7 +36,7 @@ using namespace std;
 #define MAX(X,Y) ( (X) > (Y) ? (X) : (Y) )
 
 #define PORT 8234 // cilso zdrojoveho portu
-#define IP2 ("192.168.2.100")
+//#define IP2 ("192.168.2.100")
 
 
 /**
@@ -45,12 +45,12 @@ using namespace std;
 typedef struct argument {
    unsigned short pt;   // aktivni v 1 
    unsigned short pu;   // aktivni v 1
-   unsigned short typ_prekladu;  // 1 domain name, 2 IP
    int *polept;
+   int *polepu;
    char rozhrani[ROZ];   // 1 = em0; 2 = ...
    char hostname_ip[BUF];
-   char addres[BUF];
-   struct sockaddr_in *src_addr; //zdrojova IP adresa
+   char *addres;
+   struct sockaddr_in *src_addr; // zdrojova IP adresa
 }  TArgum;
 
 
@@ -77,7 +77,7 @@ void parserArg(int argc, char *argv[], TArgum &params) {
 
 //vyprazdneni strukturu
    memset(params.hostname_ip, '\0', sizeof(params.hostname_ip));
-   memset(params.addres, '\0', sizeof(params.addres));
+  // memset(params.addres, '\0', sizeof(params.addres));
    params.pt = 0;
    params.pu = 0;
 
@@ -273,9 +273,153 @@ void parserArg(int argc, char *argv[], TArgum &params) {
       {
          //zpracovani FCE PU----------SPUSTI SE FCE PU
 
+         //port nezacina '-' ani ','
+         if( argv[i+1][0] != '-' && argv[i+1][0] != ',' ) 
+         {
+            for( pozice = 0; argv[i+1][pozice] != '\0'; pozice ++ )
+            {
+               if( argv[i+1][pozice] == ',' )//obsahuje ','
+               { 
+                  mod = 2;
+                  carka++;
+               }
+               else if( argv[i+1][pozice] == '-' )//obsahuje '-'
+               { 
+                  if( pomlcka != 0 )
+                  {
+                     //bud zrusit nebo pouzit cast pro argumentu
+                     fprintf(stderr, "MOD3 vickrat pomlcka\n");
+                     exit(-1);
+                     break;
+                  }
+                  pomlcka++;
+                  mod = 3;
+                  carka = 4;
+               }
+//dodelat,poresit co nastane kdyz spatne zadany port
+               else if( isdigit(argv[i+1][pozice]) == 0 ) //neni cislo
+               {
+                  fprintf(stderr, "CHYBA parametru, neni cislo\n");
+                  exit(-1);
+               }
+            }
+         }
+         else
+         {
+            fprintf(stderr, "Spatne zadane parametry, po '-pt' musi nasledovat vycet portu a to ve tvaru\nPORT, nebo PORT,PORT,PORT a nebo PORT-PORT\n");
+            exit(-1);
+         }
+         if( mod == 0 ) //port zadan jednim cislem
+         {
+            mod = 1;
+            carka = 3;
+         }
+         else if( mod == 2)
+         {
+            carka = carka + 3;
+         }
 
-         //zpracovani portu ARGPU
+         //alokace pole 
+         int pozice1 = 0;//pozice pri nacitani cisla, pom, pole
+         int pozice2 = 2;//pozice pro nacitani portu do pole
+         params.polepu = (int*)malloc(carka * sizeof(int));//nezapomenout uvolnit
+         memset(params.polepu, '\0', sizeof(params.polepu));
+         params.polepu[0] = mod;
+         params.polepu[1] = carka;
+         pomlcka = 0;
+         //naplneni pole, cisl
+         if( mod == 1 )
+         {  //kontrola rozsahu velikosti portu
+            if( atoi(argv[i+1]) > 0 && atoi(argv[i+1]) <= 65535 )
+            {
+              params.polepu[2] = atoi(argv[i+1]);
+            }
+            else //vytvorit fci na vypis chyb
+            {
+               fprintf(stderr, "CHYBA MOD1 spatne rozsah portu\n");
+               exit(-1);
+            }
+         }
+         else if( mod == 2 )
+         {
+            for( pozice = 0; argv[i+1][pozice] != '\0'; pozice++ )
+            {
+               if( isdigit(argv[i+1][pozice]) != 0 )
+               {
+                  cislo[pozice1] = argv[i+1][pozice];
+                  pozice1++;
+               }
+               else if( argv[i+1][pozice] == ',' )
+               {
+                  if( atoi(cislo) > 0 && atoi(cislo) <= 65355 )
+                  {
+                     params.polept[pozice2] = atoi(cislo);//ulozeni cisla do pole
+                     pozice2++;
+                  }
+                  else
+                  {
+                     fprintf(stderr, "MOD2 port cislo %d je vynechan, lezi mimo rozsah povolenych portu\n",atoi(cislo));
+                     exit(-1);
+                  }
+                  pozice1 = 0;
+                  memset(cislo, '\0', sizeof(cislo));
+               }
+               else
+               {
+                  fprintf(stderr, "MOD2 neni vyresena drivejsi kontrola\n");
+                  exit(-1);
+               }
+            }
+            params.polepu[pozice2] = atoi(cislo);//ulozeni posldeniho cisla do pole
+         }
+         //pracuje tak ze vezme jen dobrou cast z portu
+         else if( mod == 3 )//mod rozsah portu
+         {
+            for( pozice = 0; argv[i+1][pozice] != '\0'; pozice++ )
+            {
+               if( isdigit(argv[i+1][pozice]) != 0 )
+               {
+                  cislo[pozice1] = argv[i+1][pozice];
+                  pozice1++;
+               }
+               else if( argv[i+1][pozice] == '-' )//nemuselo by se
+               {
+                  //vynecha druhou cats za pmlckouo
+                  if( pomlcka == 0)
+                  {
+                     params.polepu[2] = atoi(cislo);
+                     pozice1 = 0;
+                     memset(cislo, '\0', sizeof(cislo));
+                     pomlcka++;
+                  }
+                  else if( pomlcka == 1)
+                  {
+                     params.polepu[3] = atoi(cislo);
+                     pomlcka = 2;
+                    // memset(cislo, '\0', sizeof(cislo));
+                  }
+                  //break;
+                  //memset(cislo, '\0', sizeof(cislo));
+               }
+               else//nemuze nastat
+               {
+                  printf("nemelo nikdy nastat\n");
+                  exit(-1);
+               }
+            }
+            if( pomlcka == 1 )
+            {
+               params.polepu[3] = atoi(cislo);
+            }
+         }
+         else  //nemelo by nastat
+         {
+            printf("neocekavana chyba, pokracujte smela dal :) \n");
+            exit(-1);
+         } 
+
          i++;
+         params.pu = 1;
       }
       else if( argv[i][0] == '-' && argv[i][1] == 'i')
       {
@@ -291,23 +435,22 @@ void parserArg(int argc, char *argv[], TArgum &params) {
       else
       {
          //zpracovani IP adresy nebo domain name
-         if( isdigit(argv[i][0]) == 0 )
+         if( isdigit(argv[i][0]) == 0 ) // domain name
          {
-            //domain name
-           params.typ_prekladu = 1;
-            for( int k = 0; argv[i][k] != '\0'; k++ )
+            params.addres = argv[i];
+            struct hostent *remoteHost = gethostbyname(params.addres);
+            if( remoteHost == NULL )
             {
-              params.addres[k] = argv[i][k];
+               fprintf(stderr, "Spatne zadane domenove jmeno\n");
+               exit(-1);
             }
+            struct in_addr ipv4addr;
+            ipv4addr.s_addr = *(u_long *)remoteHost->h_addr_list[0];
+            params.addres = inet_ntoa(ipv4addr);
          }
-         else
+         else // IP adresa
          {
-            //adresa ve forme IP
-            params.typ_prekladu = 2;
-            for( int k =0; argv[i][k] != '\0'; k++ )
-            {
-               params.addres[k] = argv[i][k];
-            }
+            params.addres = argv[i];
          }
       }
 
@@ -436,9 +579,17 @@ int ipInterface( TArgum &params ) {
 
    int error = 1;
    pcap_if_t *device;
+// divne chovani, jen oprave pole
+   int pt,pu;
+   for(pt=0;params.polept[pt]!='\0';pt++);
+   for(pu=0;params.polept[pu]!='\0';pu++);
 
    char *errbuf;
    pcap_findalldevs(&device, errbuf);
+
+//   params.polept[pt]='\0';
+//   params.polept[pu]='\0';
+
    pcap_addr_t *adresa;
 
    bool found = 0;
@@ -475,6 +626,9 @@ int ipInterface( TArgum &params ) {
    }
    pcap_freealldevs(device);
 
+
+   params.polept[pt]='\0';
+   params.polept[pu]='\0';
    return error;
 }
       
@@ -482,10 +636,10 @@ int ipInterface( TArgum &params ) {
 void packet_handler(u_char *param, const struct pcap_pkthdr *header, const u_char *pkt_data) {
 
 
-printf("ve fci pro rozbor prijatyh dat\n");
+//printf("ve fci pro rozbor prijatyh dat\n");
 
-printf("cas paketu :%s\n", ctime((const time_t *)&((header->ts.tv_sec))));
-   struct ether_header *ethh;
+//printf("cas paketu :%s\n", ctime((const time_t *)&((header->ts.tv_sec))));
+   //struct ether_header *ethh;
    struct ip *iph;
    struct tcphdr *tcph;
    //struct u_char *payload;
@@ -495,10 +649,13 @@ printf("cas paketu :%s\n", ctime((const time_t *)&((header->ts.tv_sec))));
    
    tcph = (struct tcphdr *)(pkt_data + sizeof(struct ether_header)+iplen);
 //printf( "tcp-h_flagf : %s\n", tcph->th_flags);
+
+  // tcp_head->th_sport = htons(PORT);   //cilso portu(zdrojovy)
+  // printf("//// %d\n",ntohs(tcph->th_sport));
    if( tcph->th_flags == 0x14 )
-      printf("je to doma\n");
+      fprintf(stdout," closed\n");
    else
-      printf("nekde chyba\n");
+      fprintf(stdout," open\n");
 }
 
 ///////////////////////////////////////////////////////////
@@ -544,7 +701,7 @@ int main( int argc, char *argv[] ) {
       struct sockaddr_in sin; //struktur apro vzdalene PC
       memset(&sin, '\0', sizeof(sin));
       sin.sin_family = AF_INET;
-      sin.sin_addr.s_addr = inet_addr(IP2);   //asik ma byt 128.0.0.1
+      sin.sin_addr.s_addr = inet_addr(params.addres);   //asik ma byt 128.0.0.1
       memset( datagram, 0, 4096);   // vynulovani datagramu
 
       if(params.polept[0] == 3)  //nastaveni MAx, MIN portu u rozsahu
@@ -553,10 +710,10 @@ int main( int argc, char *argv[] ) {
          int min = MIN(params.polept[2], params.polept[3]);
          params.polept[2] = min;
          params.polept[3] = max;
-         printf("max : %d, min : %d \n", params.polept[3],params.polept[2]);
       }
       for(int i = 2; params.polept[i] != '\0'; i++)
       {
+         memset(datagram, '\0', sizeof(datagram));
          if(params.polept[0] == 3)  //porty zadany pomoci rozsahu
          {
             for( int l = params.polept[2]; l <= params.polept[3]; l++)
@@ -566,76 +723,69 @@ int main( int argc, char *argv[] ) {
             }
             i++;
          }
-         else
+         else  // cilso portu zadane vyctem nebo cislem
          {
-
-//////////////////
-
+printf("params.....%d\n", params.polept[i]);
             fillTCP(tcp_head, params.polept[i]);// naplneni TCP hlavicky
-   struct pom_tcp_head *pseudo = (struct pom_tcp_head *)((char*)tcp_head - sizeof(struct pom_tcp_head));
-   pseudo->p_src = inet_addr(inet_ntoa(params.src_addr->sin_addr));//inet_addr("192.168.2.102");
-   pseudo->p_dst = inet_addr(IP2);
-   pseudo->p_protocol = IPPROTO_TCP;
-   pseudo->p_tcplen = htons(sizeof(struct tcphdr));
+            struct pom_tcp_head *pseudo = (struct pom_tcp_head *)((char*)tcp_head - sizeof(struct pom_tcp_head));
+            pseudo->p_src = inet_addr(inet_ntoa(params.src_addr->sin_addr));
+            pseudo->p_dst = inet_addr(params.addres);
+            pseudo->p_protocol = IPPROTO_TCP;
+            pseudo->p_tcplen = htons(sizeof(struct tcphdr));
 
-   tcp_head->th_sum = checkSum((u_short*)pseudo, sizeof(struct pom_tcp_head)+sizeof(struct tcphdr)); 
+            tcp_head->th_sum = checkSum((u_short*)pseudo, sizeof(struct pom_tcp_head)+sizeof(struct tcphdr)); 
 
             sin.sin_port = htons(params.polept[i]);
             fillIP(ip_head, sin, params);     // naplneni IP hlavicky
             ip_head->ip_sum = checkSum( (unsigned short *)datagram, ip_head->ip_len >> 1);
-//send packet
+            //send packet
             if( sendto(mSocket, datagram, ip_head->ip_len, 0, (struct sockaddr *) &sin, sizeof(struct sockaddr)) < 0 )
             {
-               cerr<<  strerror(errno)<<endl;  
+               strerror(errno);  
             }
             else
             {
-////////////////////////////////
-/////////zachytavani paketu
+            /////////zachytavani paketu
+               pcap_t *handle;
+               char errbuf[PCAP_ERRBUF_SIZE];
+               struct bpf_program fp; //zkompilovany filtr
+               bpf_u_int32 net;  //OUR IP
+               handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, 100, errbuf);
+               if( handle == NULL )
+               {
+                  printf("chyba u pcap open %s:%s\n",params.rozhrani, errbuf);
+                  pcap_freealldevs((pcap_if_t *)handle);
+               }
+/*
+               // compile filter
+               char filter[] = "tcp[0:2]=8000 && tcp[2:2]=8234";// && ip[16:4]=192.168.2.102";// && tcp port 8000 || tcp port 8234";
 
+               if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
+               {
+                  printf("chyba pri kompilaci filtru pro achyvani paketu \n");
+               }
+               // nastaveni filtru
+               if( pcap_setfilter(handle, &fp) == -1 )
+               {
+                  printf("chyba pri nastavovani fitlru\n");
+               }
+*/
+               //start capture
+               printf("zacatek zachytavani\n");
+               fprintf(stdout,"%d/tcp",params.polept[i]);
+               pcap_dispatch(handle, 1, packet_handler, NULL);
+               //pcap_loop(handle, 0, packet_handler, NULL);
+               printf("\nkonec zachytavani\n");
 
-
-   //pcap_if_t *device;
-pcap_t *handle;
-char errbuf[PCAP_ERRBUF_SIZE];
-struct bpf_program fp; //zkompilovany filtr
-bpf_u_int32 net;  //OUR IP
-handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, 1000, errbuf);
-if( handle == NULL )
-{
-   printf("chyba u pcap open %s:%s\n",params.rozhrani, errbuf);
-   pcap_freealldevs((pcap_if_t *)handle);
-}
-
-// compile filter
-char filter[] = "tcp[0:2]=8000 && tcp[2:2]=8234";// && ip[16:4]=192.168.2.102";// && tcp port 8000 || tcp port 8234";
-
-if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
-{
-   printf("chyba pri kompilaci filtru pro achyvani paketu \n");
-}
-// nastaveni filtru
-if( pcap_setfilter(handle, &fp) == -1 )
-{
-   printf("chyba pri nastavovani fitlru\n");
-}
-
-//start capture
-printf("zacatek zachytavani\n");
-pcap_dispatch(handle, 1, packet_handler, NULL);
-//pcap_loop(handle, 0, packet_handler, NULL);
-printf("konec zachytavani\n");
-
-pcap_close(handle);
-//pcap_free(&fp);
-//////////
+               pcap_close(handle);
+               //pcap_free(&fp);
             }
-}
+         }
       }
    }
    if( params.pu == 1 ) // UDP scanning
    {
-
+      printf("ahoj");
    }
    return 1;
 }
