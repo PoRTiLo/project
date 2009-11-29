@@ -306,6 +306,11 @@ void parserArg(int argc, char *argv[], TArgum &params) {
                                    && (argv[i][1] == 'p')
              ) 
       {
+         carka = 0;
+         pomlcka = 0;
+         mod = 0;
+         pozice = 0;
+         memset(cislo, '\0', sizeof(cislo));
          //zpracovani FCE PU----------SPUSTI SE FCE PU
 
          //port nezacina '-' ani ','
