@@ -10,10 +10,9 @@
 
 
 /**
- * TODO: dodelat vsechny filtry, nastavit aspon zdrojovou IP a cilovou IP
+ * TODO: dodelat filter aby se sam zmenil po zmene zdrojoveho portu 
  *       poresit UDP, proc je tal divne
  *       dokumnetace
- *       dookomentovat kod
  *       sbalit, odevzdat DNES
  */
 
@@ -56,7 +55,8 @@ using namespace std;
 
 #define PORT 8234 // cilso zdrojoveho portu
 
-#define TIME 500  // spozdeni nacitani prichozich paketu
+#define TIME 1000 // spozdeni nacitani prichozich paketu pro TCP scanning
+#define TIME1 5000 // spozdeni nacitani prichozich paketu pro UDP scanning 
 
 #define HELP "\n\nNapoveda : Jednoduchy TCP/UDP scanner\nversion : 1.00, Jaroslav Sendler, xsendl00\nmailto : xsendl00@stud.fit.vutbr.cz\n\nProgram slouzi pro skenovani portu pomoci TCP nebo UDP.\nMa nektere povinne prepinace(4)\n-pt  <cislo> skenovani TCP\n-pu  <cislo> skenovani UDP\n-i   <rozhrani> nazev rozhrani pro skenovani\n[IP adresa | domenove jmeno]\n<cislo> cislo portu mozno zadat, vyctem, nebo rozsahem\n\n"
 
@@ -754,6 +754,7 @@ void packet_handlerTCP(u_char *param, const struct pcap_pkthdr *header, const u_
       fprintf(stdout," open");
 }
 
+
 /**
  * MAIN
  *
@@ -763,6 +764,7 @@ void packet_handlerTCP(u_char *param, const struct pcap_pkthdr *header, const u_
  */
 
 int main( int argc, char *argv[] ) {
+
    int error;
    int mSocket;
    TArgum params;
@@ -858,8 +860,8 @@ int main( int argc, char *argv[] ) {
                   // compile filter
                   char d_port[10];
                   sprintf(d_port, "%d",l);
-                  char filter[]  = "tcp[2:2]=8234 && tcp[0:2]=";
-                  strcat( filter,d_port );
+                  char filter[] = "tcp[2:2]=8234 && tcp[0:2]=";
+                  strcat( filter, d_port);
                   if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
                   {
                      fprintf(stderr, "chyba pri kompilaci filtru pro achyvani paketu \n");
@@ -932,8 +934,8 @@ int main( int argc, char *argv[] ) {
                }
                char d_port[10];
                sprintf(d_port, "%d",params.polept[i]);
-               char filter[]  = "tcp[2:2]=8234 && tcp[0:2]=";
-               strcat( filter,d_port );
+               char filter[] = "tcp[2:2]=8234 && tcp[0:2]=";
+               strcat( filter, d_port);
                if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
                {
                   fprintf(stderr, "chyba pri kompilaci filtru pro achyvani paketu \n");
@@ -1032,7 +1034,7 @@ int main( int argc, char *argv[] ) {
                   char errbuf[PCAP_ERRBUF_SIZE];
                   struct bpf_program fp; //zkompilovany filtr
                   bpf_u_int32 net;  //OUR IP
-                  handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, TIME, errbuf);
+                  handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, TIME1, errbuf);
                   if( handle == NULL )
                   {
                      fprintf(stderr, "chyba u pcap open %s:%s\n",params.rozhrani, errbuf);
@@ -1041,10 +1043,10 @@ int main( int argc, char *argv[] ) {
                   }
 
                   char d_port[10];
-                  sprintf(d_port, "%d",params.polept[i]);
+                  sprintf(d_port, "%d",l);
                   // compile filter
-                  char filter[]  = "tcp[2:2]=8234 && tcp[0:2]=";
-                  strcat( filter,d_port );
+                  char filter[] = "icmp[28:2]=8234 && icmp[30:2]=";
+                  strcat( filter, d_port );
                   if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
                   {
                      fprintf(stderr, "chyba pri kompilaci filtru pro achyvani paketu \n");
@@ -1059,7 +1061,8 @@ int main( int argc, char *argv[] ) {
 
                   //start capture
                   fprintf(stdout,"%d/udp",l);
-                  pcap_dispatch(handle, 1, packet_handlerUDP, NULL);
+                  if( pcap_dispatch(handle, 1, packet_handlerUDP, NULL) == 0 )
+                     fprintf(stdout, " open");
                   fprintf(stdout, "\n");
                   pcap_close(handle);
                   //pcap_free(&fp);
@@ -1099,17 +1102,16 @@ int main( int argc, char *argv[] ) {
                char errbuf[PCAP_ERRBUF_SIZE];
                struct bpf_program fp; //zkompilovany filtr
                bpf_u_int32 net;  //OUR IP
-               handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, TIME, errbuf);
+               handle = pcap_open_live(params.rozhrani, BUFSIZ, 1, TIME1, errbuf);
                if( handle == NULL )
                {
                   fprintf(stderr, "chyba u pcap open %s:%s\n",params.rozhrani, errbuf);
                   pcap_freealldevs((pcap_if_t *)handle);
                }
-
                char d_port[10];
-               sprintf(d_port, "%d",params.polept[i]);
-               char filter[]  = "tcp[2:2]=8234 && tcp[0:2]=";//filter
-               strcat( filter,d_port );
+               sprintf(d_port, "%d",params.polepu[i]);
+               char filter[] = "icmp[28:2]=8234 && icmp[30:2]=";
+               strcat( filter, d_port );
                // compile filter
                if( pcap_compile(handle, &fp, filter, 0, net) == -1 )
                {
@@ -1125,18 +1127,20 @@ int main( int argc, char *argv[] ) {
 
                //start capture
                fprintf(stdout,"%d/udp",params.polepu[i]);
-               pcap_dispatch(handle, 1, packet_handlerUDP, NULL);
+               if( pcap_dispatch(handle, 1, packet_handlerUDP, NULL) == 0 )
+                  fprintf(stdout," open");
                fprintf(stdout, "\n");
-
                pcap_close(handle);
             }
          }
       }
    }
+   
    if( params.pu == 1 )
       free(params.polepu);
    if( params.pt == 1 )
       free(params.polept);
-   close(mSocket);
+   close(mSocket);   // uzavreni socketu
+
    return 1;
 }

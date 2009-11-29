@@ -20,9 +20,9 @@ Changelog : Program pracuje na bazi jednoducheho sitoveho scanneru. Pro svou kom
                   [domain_name | IP_adresa] -povinny
                   -help | - HELP
 
-         Pouziti: proskenuje TCP, porty vypsane vyctem na sitovem rozhrani em0 
+         Pouziti: oskenuje TCP, porty vypsane vyctem na sitovem rozhrani em0 
                      :~$ ./scan -pt 23,34,45 -i em0 192.168.2.100
-                  proskenuje UDP, porty vypsane intervalem na sitovem rozhrani em0
+                  oskenuje UDP, porty vypsane intervalem na sitovem rozhrani em0
                      :~$ ./scan -pu 23400-23450 -i em0 192.168.2.100
 
 
